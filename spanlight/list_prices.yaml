@@ -1,0 +1,58 @@
+# Published paid-tier list prices, used ONLY to compute
+# `spanlight.cost_usd_equivalent`: what a session would have cost if it had not
+# run on a free tier. It is not what was spent. Actual spend is
+# `spanlight.cost_usd`, it comes from llm/providers/quotas.yaml, and on these
+# providers it is genuinely 0.0.
+#
+# Prices are $/1,000,000 tokens.
+#
+# `last_verified: UNVERIFIED` means the figure came from documentation and has
+# not been checked against a real invoice or the provider's current pricing page.
+# Every entry here is currently in that state, so the equivalent figure is an
+# order-of-magnitude estimate and any README or study quoting it has to say so.
+# This mirrors the rule QUOTAS.md already applies to rate limits: a number is
+# either measured or it is labelled as not.
+#
+# A provider absent from this file produces no equivalent at all rather than a
+# zero. Zero would be indistinguishable from a genuinely free provider and would
+# quietly drag a study average toward nothing.
+providers:
+  gemini:
+    input_price_per_1m: 0.10
+    output_price_per_1m: 0.40
+    source: "Google AI pricing page, flash tier"
+    last_verified: "UNVERIFIED"
+
+  groq:
+    input_price_per_1m: 0.59
+    output_price_per_1m: 0.79
+    source: "Groq pricing page, llama-3.3-70b-versatile"
+    last_verified: "UNVERIFIED"
+
+  cerebras:
+    input_price_per_1m: 0.10
+    output_price_per_1m: 0.10
+    source: "Cerebras inference pricing, llama3.1-8b"
+    last_verified: "UNVERIFIED"
+
+  openrouter:
+    input_price_per_1m: 0.02
+    output_price_per_1m: 0.03
+    source: "OpenRouter model page, llama-3.1-8b-instruct paid variant"
+    last_verified: "UNVERIFIED"
+
+  ollama:
+    # Runs on hardware you already own. Zero here is the true marginal price,
+    # not a placeholder, which is why it carries a real verification note.
+    input_price_per_1m: 0.0
+    output_price_per_1m: 0.0
+    source: "local inference, no per-token charge"
+    last_verified: "2026-08-07"
+
+  sarvam:
+    # Deliberately null rather than guessed. An unknown price must not become a
+    # confident number in a study table.
+    input_price_per_1m: null
+    output_price_per_1m: null
+    source: "not published at time of writing"
+    last_verified: "UNVERIFIED"
