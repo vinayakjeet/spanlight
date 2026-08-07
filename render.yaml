@@ -8,7 +8,10 @@ services:
     name: spanlight
     runtime: python
     plan: free
-    buildCommand: pip install uv && uv sync --frozen --no-dev
+    # `--extra app` because the demo's web dependencies live outside
+    # `[project].dependencies`, which holds only what the library itself needs.
+    # Without it the container installs Spanlight and no web server.
+    buildCommand: pip install uv && uv sync --frozen --no-dev --extra app
     # Call the interpreter the build produced rather than going through `uv run`.
     # `uv run` re-resolves and syncs before executing, which on a cold container
     # blows past Render's port-scan window, and it assumes uv is on the runtime

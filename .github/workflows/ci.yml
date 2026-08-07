@@ -17,10 +17,49 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --extra app
 
       - name: Lint (ruff)
         run: uv run ruff check .
 
       - name: Test (pytest)
         run: uv run pytest
+
+  # Proves the three-line adoption claim from the outside. The suite above runs
+  # against the working tree, where `spanlight/` is importable whether or not it
+  # is a package at all, so it cannot catch a file missing from the wheel or a
+  # dependency that only resolves because the demo happens to install it.
+  install-from-git:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install Spanlight as a git dependency
+        run: uv venv && uv pip install "git+https://github.com/${{ github.repository }}@${{ github.sha }}"
+
+      - name: Adopt it
+        run: |
+          uv run python - <<'PY'
+          import spanlight
+
+          # Returns False with no endpoint configured, which is the deliberate
+          # no-op rather than a silent failure.
+          assert spanlight.init(service="ci-probe") is False
+
+          # Reads spanlight/list_prices.yaml. A package that imports and then
+          # fails on the first cost lookup is worse than one that fails to
+          # install, because it fails later and somewhere else.
+          assert spanlight.cost_usd_equivalent("groq", 412, 88) > 0
+
+          with spanlight.session() as session_id, spanlight.model_span(provider="groq"):
+              assert session_id
+
+          # The library must not drag the demo's web stack into a consumer.
+          try:
+              import fastapi
+          except ImportError:
+              pass
+          else:
+              raise AssertionError("installing spanlight pulled in fastapi")
+          PY

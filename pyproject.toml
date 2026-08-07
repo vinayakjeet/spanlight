@@ -4,17 +4,27 @@ version = "0.1.0"
 description = "Drop-in OpenTelemetry instrumentation for LLM agents: GenAI-convention spans, cost and token attribution, and detectors for failures a healthcheck hides."
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
+# The library's own needs, and nothing else. Spanlight is installed into other
+# services, so anything listed here is imposed on every one of them. It imports
+# opentelemetry, structlog, pydantic and yaml, and that is the whole list.
 dependencies = [
-    "fastapi>=0.115",
-    "uvicorn[standard]>=0.32",
-    "pydantic-settings>=2.6",
     "structlog>=24.4",
-    "httpx>=0.27",
-    "tenacity>=9.0",
+    "pydantic>=2.9",
     "pyyaml>=6.0",
     "opentelemetry-sdk>=1.28",
     "opentelemetry-exporter-otlp-proto-http>=1.28",
-    "opentelemetry-instrumentation-fastapi>=0.49b0",
+]
+
+# What the demo agent in `app/` needs. Kept out of the line above so that
+# adopting Spanlight does not drag FastAPI, uvicorn and an HTTP client into a
+# service that wanted a tracing library.
+[project.optional-dependencies]
+app = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic-settings>=2.6",
+    "httpx>=0.27",
+    "tenacity>=9.0",
 ]
 
 [dependency-groups]
@@ -22,10 +32,25 @@ dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "ruff>=0.7",
+    # Instruments the `requests` library the OTLP exporter transports over, so
+    # `tests/spanlight/test_self_instrumentation.py` can prove exporting a span
+    # does not create one.
+    "opentelemetry-instrumentation-requests>=0.49b0",
 ]
 
+# Reverses ShipGate's `package = false`, deliberately and only here: this is the
+# one project in the portfolio other repos import rather than fork. See
+# DECISIONS.md.
 [tool.uv]
-package = false
+package = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# `app/`, `llm/` and `bench/` are the demo and its harness, not the library.
+[tool.hatch.build.targets.wheel]
+packages = ["spanlight"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

@@ -290,4 +290,47 @@ propagation. Mutation testing caught it: deleting the `attach` call left every
 test green. The tests now close the caller's session before the second hop, which
 is what another process would look like, and that mutation fails them.
 
+## 2026-08-08: Spanlight is a package, and its dependencies are not the demo's
+
+**Context:** ShipGate decided `package = false` on 2026-08-04, correctly: it is
+an application, nothing imports it, and making it a package would have been
+ceremony. This repo inherited that setting from the same chassis. But Spanlight
+is the one project in the portfolio that other repos import rather than fork
+(SPEC A3), so the inherited default is wrong here specifically.
+
+The flip itself is one line. The dependency split is the part that matters.
+`[project].dependencies` listed FastAPI, uvicorn, httpx and tenacity, which are
+what the demo agent in `app/` needs and have nothing to do with the library.
+Installing Spanlight would have imposed a web framework and an HTTP client on
+every consumer, which is not a drop-in tracing library by any reading.
+`opentelemetry-instrumentation-fastapi` was in there too and was imported
+nowhere at all, left over from the chassis `otel_bootstrap` this repo deleted.
+
+**Decision:** `package = true` with a hatchling backend scoped to `spanlight/`.
+`[project].dependencies` holds only what the library imports: opentelemetry,
+structlog, pydantic, pyyaml. The demo's needs move to
+`[project.optional-dependencies].app`, so `render.yaml` and CI both ask for
+`--extra app` explicitly.
+
+**Alternatives considered:** a `src/` layout, which is the conventional fix for
+exactly the flat-layout ambiguity that broke the first build attempt, rejected
+because it would move every file in the repo for a problem that naming one
+package in the build config also solves. Also considered: a separate repository
+for the library, rejected because the demo agent is the trace source the field
+study needs, and splitting them would mean maintaining a consumer just to
+generate traffic.
+
+**Consequences:** the wheel is now a thing that can be wrong independently of the
+tests. `spanlight/list_prices.yaml` has to be in it or every consumer imports
+fine and then fails on its first cost lookup, which is a worse failure than not
+installing because it happens later and somewhere else. The existing suite cannot
+catch that: it runs against the working tree, where `spanlight/` is importable
+whether or not it is a package. So CI gained a job that installs from the git URL
+into a clean environment, calls `init()`, reads a real price, and asserts FastAPI
+is absent.
+
+That job earned itself immediately. The first run installed the previously pushed
+commit rather than the working tree and failed on flat-layout discovery, which is
+a reminder that a git dependency ships what is pushed, not what is on disk.
+
 <!-- Add entries above this line. -->
