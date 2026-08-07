@@ -11,6 +11,7 @@ Three lines to adopt:
 
 from __future__ import annotations
 
+from spanlight._propagation import headers
 from spanlight._session import current_session_id
 from spanlight._setup import init
 from spanlight._spans import (
@@ -30,6 +31,7 @@ __all__ = [
     "current_session_id",
     "fingerprint",
     "get_tracer",
+    "headers",
     "init",
     "model",
     "model_span",

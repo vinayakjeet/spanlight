@@ -253,4 +253,41 @@ which is a SPEC change and is not being made quietly. The sampler now has tests
 that build a genuinely sampling provider, which is what would have caught the
 `TypeError`, and the suite is that much slower for running a thousand sessions.
 
+## 2026-08-08: A hop inherits the session id, and the test has to prove it
+
+**Context:** M2.2 needed a trace to survive an HTTP boundary. The mechanism is
+uncontroversial: OpenTelemetry's default propagator already carries both
+`traceparent` and `baggage`, verified rather than assumed, so no custom
+propagator is needed. The real question was what a second service should call
+the run it is now part of.
+
+**Decision:** the session id travels in W3C baggage under the same
+`spanlight.session.id` key used for the span attribute, and `session()` accepts
+inbound `headers`: it joins the caller's trace and adopts the caller's session id
+rather than minting a new one. An explicit id still wins, so a caller who knows
+better can say so.
+
+**Alternatives considered:** a custom `X-Spanlight-Session` header, rejected
+because a service in the middle running plain OpenTelemetry forwards baggage
+untouched and would drop a header of ours, and the break would surface as two
+unrelated sessions rather than as an error. Also considered: a fresh id per hop
+joined at query time by trace id, rejected because the study counts sessions, so
+a two-service run would be scored as two short ones and a failure in the second
+hop would look like a session that simply ended.
+
+**Consequences:** the session id is now attacker-supplied on a public endpoint,
+since anyone can send baggage. It is only ever a grouping key, never a lookup
+into anything, so the exposure is corpus pollution rather than access; a public
+deployment collecting a study should ignore inbound baggage. Malformed
+`traceparent` and `baggage` values have tests proving they do not raise, because
+instrumentation that throws on a bad header turns a header into an outage.
+
+**What this cost to get right:** the first version of both propagation tests
+passed against an implementation that never attached the extracted context at
+all. They built the outbound headers *inside* the caller's session, so the callee
+inherited the ambient context and the trace ids matched for a reason unrelated to
+propagation. Mutation testing caught it: deleting the `attach` call left every
+test green. The tests now close the caller's session before the second hop, which
+is what another process would look like, and that mutation fails them.
+
 <!-- Add entries above this line. -->

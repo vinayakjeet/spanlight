@@ -7,14 +7,16 @@ import json
 import os
 import secrets
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from typing import Any
 
 from opentelemetry import trace
+from opentelemetry.context import attach, detach
 from opentelemetry.trace import Span, Status, StatusCode
 
 from spanlight._detector_framework import SESSION, SPAN, registry
+from spanlight._propagation import remote_context, remote_session_id
 from spanlight._session import bind, current_session_id
 from spanlight.attributes import (
     ERROR_TYPE,
@@ -107,7 +109,10 @@ def _span(name: str, attributes: dict[str, Any], phase: str = SPAN) -> Iterator[
 
 
 @contextmanager
-def session(session_id: str | None = None) -> Iterator[str]:
+def session(
+    session_id: str | None = None,
+    headers: Mapping[str, str] | None = None,
+) -> Iterator[str]:
     """Group everything inside into one session, as one span.
 
     A session is the unit the detectors reason over and the unit the M7 study
@@ -124,17 +129,37 @@ def session(session_id: str | None = None) -> Iterator[str]:
     Yields the id rather than the span, because callers want something they can
     hand back to a user to find the run with. The span is reachable through
     `opentelemetry.trace.get_current_span()` for the rare caller who needs it.
+
+    Pass `headers` from an inbound request and the run joins the caller's trace
+    and adopts the session id from its baggage:
+
+        with spanlight.session(headers=request.headers) as session_id:
+
+    An agent that calls a second service is one logical run, so it has to be one
+    session. Generating a fresh id per hop would split it, and the study would
+    then count a two-service failure as two unrelated short sessions. An explicit
+    `session_id` still wins over the inbound one, so a caller that knows better
+    can say so.
     """
-    resolved = session_id or uuid.uuid4().hex
-    with bind(resolved):
-        try:
-            with _span(SESSION_SPAN_NAME, {}, phase=SESSION):
-                yield resolved
-        finally:
-            # Detector scratch space for a finished run is garbage. Releasing it
-            # here is what keeps the registry holding only sessions in flight;
-            # its LRU and TTL are the backstop for runs that never get here.
-            registry.release(resolved)
+    remote = remote_context(headers) if headers is not None else None
+    resolved = session_id or (remote_session_id(remote) if remote else None)
+    resolved = resolved or uuid.uuid4().hex
+
+    token = attach(remote) if remote is not None else None
+    try:
+        with bind(resolved):
+            try:
+                with _span(SESSION_SPAN_NAME, {}, phase=SESSION):
+                    yield resolved
+            finally:
+                # Detector scratch space for a finished run is garbage. Releasing
+                # it here is what keeps the registry holding only sessions in
+                # flight; the LRU and TTL are the backstop for runs that never
+                # get here.
+                registry.release(resolved)
+    finally:
+        if token is not None:
+            detach(token)
 
 
 @contextmanager

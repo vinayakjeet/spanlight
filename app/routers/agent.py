@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import suppress
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 import spanlight
@@ -57,7 +57,7 @@ async def _retrieve(query: str, k: int) -> list[str]:
 
 
 @router.post("/run", response_model=AgentReply)
-async def run(request: AgentRequest) -> AgentReply:
+async def run(request: AgentRequest, http: Request) -> AgentReply:
     """The traffic source for the traces this project exists to show.
 
     Returns the session id so a visitor can find their own trace in Grafana.
@@ -72,7 +72,10 @@ async def run(request: AgentRequest) -> AgentReply:
     """
     settings = get_settings()
 
-    with spanlight.session() as session_id:
+    # Joins the caller's trace when there is one, so an upstream service calling
+    # this agent reads as one run rather than two. A visitor hitting the URL
+    # directly sends no traceparent and simply starts a new session.
+    with spanlight.session(headers=http.headers) as session_id:
         # Swallowed on purpose, and this is the bug the demo is showing. The
         # tool span records the error, the run carries on to the model, and the
         # reply comes back looking healthy. Nothing here reports the failure,
