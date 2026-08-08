@@ -141,8 +141,37 @@ Export time is deliberately excluded. A `BatchSpanProcessor` hands spans to a
 background thread and the caller never waits, so including it would measure
 Grafana's latency and call it Spanlight's overhead.
 
-Not yet measured: overhead under real concurrency, and memory under sustained
-load. Those are M5. The field study numbers are M7 and do not exist yet.
+### Detector state
+
+`PYTHONPATH=. uv run python -m pytest tests/spanlight/test_detector_state.py`
+
+**928 bytes retained across 10,000 sessions**, 0.1 per session, nothing resident
+afterwards. Within a session, loop-detector state is unbounded by design: it has
+to remember what it has already seen, and capping it would blind the detector in
+exactly the long runs most likely to contain a loop. The bound is the session
+ending.
+
+### False positives
+
+Regenerate with `PYTHONPATH=. uv run python bench/false_positives.py`.
+
+700 synthetic healthy sessions across seven patterns: pagination, retries,
+multi-step plans, recovery by trying a different tool, long research runs.
+
+| Detector | Fires on healthy | 95% CI |
+|---|---|---|
+| loop | 0/700 | 0.0% to 0.5% |
+| silent_tool_failure | 0/700 | 0.0% to 0.5% |
+
+Those are the numbers **after** the measurement changed the rules. Before it,
+loop fired on 14.3% of healthy sessions and silent_tool_failure on 28.6%, both
+because of patterns nobody would design a detector to flag. See What Broke.
+
+The corpus is synthetic, so zero means "does not fire on anything I thought of",
+not "does not fire". The real rate comes from the M7 field corpus.
+
+Not yet measured: overhead under real concurrency. The field study numbers are M7
+and do not exist yet.
 
 ## Technical decisions
 
@@ -250,7 +279,16 @@ the outbound headers inside the caller's session, so the callee inherited the
 context ambiently and the trace ids matched for an unrelated reason. Deleting the
 `attach` call entirely left every test green.
 
-The thread through all four is that a test which cannot fail is worse than no
+**Both detectors flagged healthy runs, constantly.** A tool that fails twice and
+succeeds on the third attempt sends identical arguments three times, so the loop
+detector fired on every retry. An agent that hits a broken tool, tries a
+different one, succeeds and answers from real data fired the silent-failure
+detector, because "a tool failed and the run finished OK" describes competent
+error handling exactly as well as it describes ignoring the error. Measured at
+14.3% and 28.6% of healthy sessions. Both rules were wrong, not their thresholds,
+and only measuring found it.
+
+The thread through all five is that a test which cannot fail is worse than no
 test, because it is evidence. The ones that matter here are now checked by
 mutation: break the rule deliberately, confirm the test goes red, put it back.
 

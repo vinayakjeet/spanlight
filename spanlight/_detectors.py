@@ -38,6 +38,17 @@ def loop_detector(state: dict, span: Span) -> str | None:
     if not name or not args_fingerprint:
         return None
 
+    # Only calls that succeeded. Counting failures made a plain retry
+    # indistinguishable from a loop: a tool that fails twice on a network blip
+    # and succeeds on the third attempt sends the same arguments three times, and
+    # `bench/false_positives.py` measured that firing on 100% of retry sessions.
+    #
+    # The distinction is real rather than a fudge. An agent in a loop is getting
+    # answers and asking again anyway; an agent retrying is not getting answers
+    # yet. Only the first is stuck.
+    if span.status.status_code is StatusCode.ERROR:
+        return None
+
     counts = state.setdefault("tool_calls", {})
     key = (name, args_fingerprint)
     counts[key] = counts.get(key, 0) + 1
@@ -107,6 +118,12 @@ def watch_for_silent_failure(state: dict, span: Span) -> None:
     if attributes.get(TOOL_NAME):
         if failed:
             state["failed_tool"] = attributes[TOOL_NAME]
+        elif state.get("failed_tool"):
+            # A tool succeeded after the failure, so the run recovered: either it
+            # retried and got through, or it found another way. Either way the
+            # agent had real data to answer from, which is the opposite of the
+            # failure this detector is for.
+            state["recovered"] = True
         return None
 
     if attributes.get(GEN_AI_SYSTEM) and state.get("failed_tool"):
@@ -130,6 +147,13 @@ def silent_tool_failure_detector(state: dict, span: Span) -> Detection | None:
     if not state.get("model_ran_after_tool_failed"):
         return None
     if span.status.status_code is StatusCode.ERROR:
+        return None
+    # No tool succeeded after the failure, so the run answered from the model
+    # alone. Measurement forced this clause: without it the rule fired on every
+    # retry and every recovery, 28.6% of healthy sessions, because "a tool
+    # failed and the run finished OK" describes competent error handling just as
+    # well as it describes ignoring the error.
+    if state.get("recovered"):
         return None
 
     # Names the tool, because the detection lands on the session span and the
