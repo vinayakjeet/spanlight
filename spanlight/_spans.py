@@ -124,6 +124,7 @@ def _span(name: str, attributes: dict[str, Any], phase: str = SPAN) -> Iterator[
 def session(
     session_id: str | None = None,
     headers: Mapping[str, str] | None = None,
+    name: str = SESSION_SPAN_NAME,
 ) -> Iterator[str]:
     """Group everything inside into one session, as one span.
 
@@ -152,6 +153,10 @@ def session(
     then count a two-service failure as two unrelated short sessions. An explicit
     `session_id` still wins over the inbound one, so a caller that knows better
     can say so.
+
+    `name` exists because ShipGate opens a session per scored item, and a
+    hundred spans all called `session` is a waterfall nobody can read. A host
+    that has a better word for its unit of work should use it.
     """
     remote = remote_context(headers) if headers is not None else None
     resolved = session_id or (remote_session_id(remote) if remote else None)
@@ -161,7 +166,7 @@ def session(
     try:
         with bind(resolved):
             try:
-                with _span(SESSION_SPAN_NAME, {}, phase=SESSION):
+                with _span(name, {}, phase=SESSION):
                     yield resolved
             finally:
                 # Detector scratch space for a finished run is garbage. Releasing
