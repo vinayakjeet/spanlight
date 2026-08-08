@@ -1,100 +1,57 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
-import threading
+import textwrap
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 
+from tests.spanlight.collector import collector
 
-class OTLPCollectorStub(BaseHTTPRequestHandler):
-    """Minimal OTLP span collector for testing.
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
-    Listens for POST /v1/traces and stashes the request body.
-    """
-
-    received_spans: list[dict] = []
-
-    def do_POST(self) -> None:
-        if self.path == "/v1/traces":
-            content_length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(content_length)
-
-            # Parse the OTLP export request. It's protobuf, but for a test
-            # stub we just need to confirm something arrived.
-            OTLPCollectorStub.received_spans.append({"body_len": len(body)})
-
-            # Return 200 OK.
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(b"")
-        else:
-            self.send_error(404)
-
-    def log_message(self, format, *args):  # noqa: ARG002
-        # Suppress HTTP server logging.
-        pass
-
-
-def find_free_port() -> int:
-    """Find an available port for the test server."""
-    import socket
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))
-        s.listen(1)
-        port = s.getsockname()[1]
-    return port
-
-
-def test_spans_are_flushed_on_process_exit() -> None:
-    """A process exiting immediately after a span still exports it.
-
-    When a short-lived process (like a failing gate job or a CLI tool) emits
-    a span and exits, the BatchSpanProcessor has not yet fired its export
-    timer. Without an explicit flush, the span dies with the process. This
-    test verifies that `spanlight.init()` installs a process exit handler
-    that flushes any pending spans.
-    """
-    OTLPCollectorStub.received_spans = []
-    port = find_free_port()
-
-    # Start the collector stub in a background thread.
-    server = HTTPServer(("127.0.0.1", port), OTLPCollectorStub)
-    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
-    server_thread.start()
-
-    # Give the server time to start.
-    time.sleep(0.1)
-
-    try:
-        # Run a subprocess that emits one span and exits immediately.
-        script = f"""
-import os
-os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://127.0.0.1:{port}"
-
+PROBE = """
 import spanlight
-spanlight.init("test-flush", sample_rate=1.0)
+spanlight.init("test-flush", endpoint="{endpoint}", sample_rate=1.0)
 
 with spanlight.model_span(provider="mock"):
     pass
 """
+
+
+def test_spans_are_flushed_on_process_exit() -> None:
+    """A process that exits immediately after a span still exports it.
+
+    `BatchSpanProcessor` exports on a timer, so a short-lived run finishes long
+    before the first tick and its spans die with it. That is the common case
+    rather than an edge one: a CLI invocation, a CI gate job, a cron task. The
+    trace of a failing gate is exactly the one worth keeping, and it is the one
+    most likely to be lost, because the process ends as soon as it fails.
+
+    The probe does not flush, and neither does Spanlight. Both SDK providers
+    default to `shutdown_on_exit=True` and shutdown flushes, so this pins someone
+    else's guarantee rather than our own code, which is exactly why it is worth
+    pinning: if it stops holding, every short run silently stops reporting and
+    nothing points at the cause.
+
+    Spanlight did register its own `atexit` flush until a mutation test deleted
+    it and this test stayed green, which is how the duplication was found.
+    """
+    with collector() as (server, endpoint):
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(REPO_ROOT)
         result = subprocess.run(
-            [sys.executable, "-c", script],
+            [sys.executable, "-c", textwrap.dedent(PROBE.format(endpoint=endpoint))],
             capture_output=True,
-            timeout=5,
+            text=True,
+            cwd=REPO_ROOT,
+            env=env,
+            timeout=60,
         )
-        assert result.returncode == 0, (
-            f"Subprocess failed: {result.stderr.decode()}"
-        )
+        assert result.returncode == 0, result.stderr
 
-        # Give the export a moment to arrive.
         time.sleep(0.5)
+        posts = list(server.paths)
 
-        # Verify that at least one span export arrived at the collector.
-        assert len(OTLPCollectorStub.received_spans) > 0, (
-            "No spans received; process exit flush may not be working"
-        )
-    finally:
-        server.shutdown()
+    assert posts == ["/v1/traces"]

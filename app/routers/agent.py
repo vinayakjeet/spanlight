@@ -8,7 +8,6 @@ from pydantic import BaseModel
 import spanlight
 from app.config import get_settings
 from llm import ChatClient, ChatMessage, ProviderClientError, ProviderConfigError, ProviderError
-from spanlight.attributes import GEN_AI_RESPONSE_MODEL
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -84,19 +83,14 @@ async def run(request: AgentRequest, http: Request) -> AgentReply:
             await _lookup_scheme(request.prompt)
         await _retrieve(request.prompt, k=3)
 
+        # No model_span here. `ChatClient.complete` opens its own, so wrapping it
+        # again would nest two model spans per call and record the usage twice,
+        # which the cost detector would read as double the spend.
         try:
-            with spanlight.model_span(provider=settings.llm_provider) as span:
-                response = await client.complete(
-                    settings.llm_provider,
-                    [ChatMessage(role="user", content=request.prompt)],
-                )
-                span.set_attribute(GEN_AI_RESPONSE_MODEL, response.model)
-                spanlight.record_usage(
-                    tokens_in=response.tokens_in,
-                    tokens_out=response.tokens_out,
-                    cost_usd=response.cost_usd,
-                    provider=response.provider,
-                )
+            response = await client.complete(
+                settings.llm_provider,
+                [ChatMessage(role="user", content=request.prompt)],
+            )
         except ProviderConfigError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         except ProviderClientError as exc:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import atexit
 import os
 from urllib.parse import unquote
 
@@ -105,12 +104,14 @@ def init(
 
     _register_default_detectors(cost_ceiling_usd)
 
-    # Flush even if the process exits before either exporter's timer fires.
-    # Short-lived CLI runs and failing gate jobs are the common case, and the
-    # trace of a failing gate is the one worth keeping.
-    atexit.register(lambda: provider.force_flush(timeout_millis=5_000))
-    atexit.register(lambda: meter_provider.force_flush(timeout_millis=5_000))
-
+    # No exit hook here on purpose. Both providers default to
+    # `shutdown_on_exit=True` and shutdown flushes, so a short-lived run exports
+    # before the batch timer would have fired. Spanlight registered its own
+    # `atexit` flush until a mutation test showed the export still arrived with
+    # it deleted: it had never done anything. It is left out rather than kept as
+    # insurance, because code that looks load-bearing and is not costs a reader
+    # more than it saves. `tests/spanlight/test_flush.py` pins the behaviour,
+    # since it is the SDK's promise rather than ours.
     logger.info("spanlight.enabled", service=service, endpoint=traces_endpoint)
     return True
 

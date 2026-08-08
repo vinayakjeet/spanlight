@@ -5,10 +5,12 @@ import time
 
 import structlog
 
+import spanlight
 from llm.providers.registry import get_provider
 from llm.retry import retry_with_backoff
 from llm.throttle import InMemoryThrottle, ThrottleBackend
 from llm.types import ChatMessage, ChatResponse, RateLimitError
+from spanlight.attributes import GEN_AI_RESPONSE_MODEL
 
 logger = structlog.get_logger(__name__)
 
@@ -54,10 +56,27 @@ class ChatClient:
                 await self._throttle.trip(provider, exc.retry_after)
                 raise
 
-        start = time.monotonic()
-        response = await _attempt()
-        response.latency_ms = (time.monotonic() - start) * 1000
+        # The span wraps the retry loop rather than each attempt, so its duration
+        # is what the caller actually waited, throttle sleeps and backoff
+        # included. A span per attempt would report the last one and make a call
+        # that spent forty seconds rate limited look fast.
+        with spanlight.model_span(provider=provider) as span:
+            start = time.monotonic()
+            response = await _attempt()
+            response.latency_ms = (time.monotonic() - start) * 1000
 
+            span.set_attribute(GEN_AI_RESPONSE_MODEL, response.model)
+            spanlight.record_usage(
+                tokens_in=response.tokens_in,
+                tokens_out=response.tokens_out,
+                cost_usd=response.cost_usd,
+                provider=response.provider,
+            )
+
+        # Stays. The span goes to Grafana and the log goes to the container's
+        # stdout, and the two get read in different situations by different
+        # people. Deleting it to avoid duplication would trade a line that costs
+        # nothing for a gap when tracing is switched off.
         logger.info(
             "llm.call",
             provider=response.provider,

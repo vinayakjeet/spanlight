@@ -333,4 +333,58 @@ That job earned itself immediately. The first run installed the previously pushe
 commit rather than the working tree and failed on flat-layout discovery, which is
 a reminder that a git dependency ships what is pushed, not what is on disk.
 
+## 2026-08-08: The client owns the model span, and the route stops guessing
+
+**Context:** M4.3 instruments the chassis `ChatClient.complete`, which already
+logged provider, model, tokens, cost and latency, so the span is a mapping onto
+the convention rather than anything new. The demo route was already wrapping its
+call to that client in a `model_span` of its own.
+
+**Decision:** the span belongs to the client, and the route drops its wrapper.
+The span encloses the whole retry loop rather than each attempt.
+
+**Alternatives considered:** leaving instrumentation at the call site so the
+library stays out of the chassis, rejected because every future adopter would
+then have to remember, and the one thing this project claims is that adoption is
+three lines and hard to get wrong. Also considered: a span per retry attempt,
+which is more granular and is what the retry decorator would naturally produce,
+rejected because the enclosing duration is what the caller actually waited.
+QUOTAS.md records a real Gemini 429 asking for a forty second wait; timing only
+the successful attempt would report that call as fast.
+
+**Consequences:** had the route kept its wrapper there would be two nested model
+spans per call and `record_usage` would run twice, so the cost detector would
+have read double the spend and fired at half the real ceiling. That is a
+double-counting bug that looks like a working feature, and it is the direct cost
+of instrumenting a layer that something above it already instrumented. The
+`llm.call` log line stays: the span goes to Grafana and the log goes to stdout,
+and they get read by different people in different situations.
+
+## 2026-08-08: Spanlight does not flush at exit, because the SDK already does
+
+**Context:** M2.3 added an `atexit` hook flushing the tracer provider, on the
+reasoning that `BatchSpanProcessor` exports on a timer and a short-lived run
+ends before the first tick. The reasoning is right and the concern is real: a
+gate job's trace is both the one worth keeping and the one most likely to be
+lost, because the process ends the moment it fails.
+
+The hook was not doing it. Mutation testing deleted it and the flush test stayed
+green. Both `TracerProvider` and `MeterProvider` default to
+`shutdown_on_exit=True`, and shutdown flushes, so the SDK had been handling this
+the whole time.
+
+**Decision:** remove both hooks. Keep the test.
+
+**Alternatives considered:** keeping them as insurance against a future provider
+constructed with `shutdown_on_exit=False`, rejected because code that appears
+load-bearing and is not costs every later reader more than it saves, and the
+comment above it was actively claiming credit for the SDK's behaviour.
+
+**Consequences:** `tests/spanlight/test_flush.py` now pins someone else's
+guarantee rather than our own code. That is worth keeping rather than deleting
+alongside the hook: if the default ever changes, the symptom is that every
+short-lived run silently stops reporting, with nothing pointing at the cause.
+The test's docstring says plainly that it guards an SDK promise, so a future
+reader does not go looking for the Spanlight code that implements it.
+
 <!-- Add entries above this line. -->
