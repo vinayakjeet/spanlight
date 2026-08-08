@@ -170,6 +170,63 @@ needs that.
 OpenTelemetry forwards baggage untouched but would drop a custom header, and that
 break would surface as two unrelated sessions rather than as an error.
 
+## What a trace exports
+
+Instrumentation is a data-exfiltration path pointed at a third party by design.
+Worth stating exactly what goes down it.
+
+Every attribute is one of three things. **Safe** means it is chosen by a
+developer, like a table name. **Hashed** means a user supplied it and only a
+salted digest leaves. **Derived** means it is a number computed from the call and
+carries no content. Nothing is opt-in yet, because nothing raw is exported at
+all.
+
+| Attribute | Class | What it reveals |
+|---|---|---|
+| `gen_ai.system` | safe | Which provider, e.g. `groq` |
+| `gen_ai.operation.name` | safe | `chat` |
+| `gen_ai.request.model` | safe | Model asked for |
+| `gen_ai.response.model` | safe | Model served |
+| `gen_ai.usage.input_tokens` | derived | Prompt length, not content |
+| `gen_ai.usage.output_tokens` | derived | Reply length, not content |
+| `spanlight.cost_usd` | derived | Spend, always `0.0` on free tiers |
+| `spanlight.cost_usd_equivalent` | derived | List-price estimate |
+| `spanlight.session.id` | derived | Random per run, links steps together |
+| `spanlight.tool.name` | safe | Which tool, e.g. `search_schemes` |
+| `spanlight.tool.args_fingerprint` | hashed | Whether two calls matched, never what they were |
+| `spanlight.retrieval.index` | safe | Which index, e.g. `schemes-v3` |
+| `spanlight.retrieval.k` | derived | How many chunks |
+| `spanlight.cold_start` | derived | First span after a spin-up |
+| `spanlight.semconv_version` | safe | Convention revision |
+| `error.type` | safe | Exception class, never the message |
+| `spanlight.detection` | derived | Which rule fired |
+
+`tests/spanlight/test_threat_model.py` asserts this table covers the SPEC
+contract exactly, so an attribute cannot be added without being classified.
+
+**What an operator of the Grafana account sees.** Every trace, in full. They
+learn which providers ran, how long calls took, what they would have cost, which
+tools were called and in what order, and which runs went wrong. They do not learn
+what any user asked, what any model answered, or what any tool was called with.
+
+**What someone who reads one trace learns.** The shape of a run. Given the
+fingerprint they can tell that two tool calls in the same process were identical,
+which is the entire basis of loop detection. They cannot reverse it: the salt is
+random per process, so the same arguments fingerprint differently in another run,
+and guessing candidate inputs does not work without it.
+
+**What is deliberately denied.** Prompts, completions, tool arguments, exception
+messages, and stack traces. The last two were leaking until M5.4: OpenTelemetry
+records exceptions with their message and full stack by default, underneath the
+code that was carefully recording only the class name.
+
+**Where it still leaks.** A tool name or an index name is recorded verbatim, so a
+caller who names an index after a user has exported that user, and this library
+cannot tell. Timing and token counts are a side channel: a long prompt is visibly
+a long prompt. And `SPANLIGHT_FINGERPRINT_SALT`, which M7 must set to compare
+runs, makes fingerprints correlatable across every process that shares it, which
+is the point and also the cost.
+
 ## What broke
 
 **A detector could not mark the span that caused it.** The framework ran from

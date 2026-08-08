@@ -65,6 +65,27 @@ DETECTIONS_TOTAL = "spanlight_detections_total"
 # where it happens.
 EXPORT_FAILURES_TOTAL = "spanlight_export_failures_total"
 
+# Declared here, emitted in M6. Named now so the label contract below covers the
+# whole SPEC table rather than only the parts already built, which is when a
+# label is easiest to get wrong.
+SESSION_COST_USD = "spanlight_session_cost_usd"
+TOKEN_USAGE = "gen_ai_client_token_usage"
+
+# Every label every metric is allowed to carry.
+#
+# A span attribute with too many values costs one wide trace. A metric label with
+# too many values costs one time series per value, forever, and the bill and the
+# Prometheus instance both fail well before anyone notices the cause. Session id
+# is the obvious foot-gun: it is on every span, it reads like a useful grouping,
+# and adding it here would create a series per run and exhaust the free tier's
+# active-series limit within days.
+METRIC_LABELS: dict[str, frozenset[str]] = {
+    DETECTIONS_TOTAL: frozenset({"type", "service"}),
+    EXPORT_FAILURES_TOTAL: frozenset({"reason", "service"}),
+    SESSION_COST_USD: frozenset({"service"}),
+    TOKEN_USAGE: frozenset({"gen_ai.system", "service", "type"}),
+}
+
 EVENT_CONTRACT = frozenset(
     {
         DETECTION_TYPE,
