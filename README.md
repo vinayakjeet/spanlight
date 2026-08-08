@@ -151,6 +151,31 @@ to remember what it has already seen, and capping it would blind the detector in
 exactly the long runs most likely to contain a loop. The bound is the session
 ending.
 
+### Adoption cost
+
+Regenerate with `PYTHONPATH=. uv run python bench/adoption_diff.py`.
+
+| Call site | Statements | Lines |
+|---|---|---|
+| `app/routers/agent.py` (session, tool, retrieval) | 4 | 4 |
+| `app/main.py` (startup) | 2 | 6 |
+| `llm/client.py` (model call with full attribution) | 5 | 10 |
+| **per site** | **3.7** | **6.7** |
+
+The three-line snippet at the top of this README is real and it works: those
+three statements get you a trace. **It is not the whole story.** Recording tokens
+and cost costs another two statements at the model call site, which is why
+`llm/client.py` is the most expensive one here and why it would be the first
+place the claim breaks for anyone else.
+
+Both numbers are given because only one of them is stable. `record_usage(...)` is
+six physical lines as this repo formats it and one line written wide, so a line
+count partly measures the formatter. Statements survive a reformat.
+
+ShipGate's adoption is M4.2 and is not counted, so this is Spanlight measuring
+itself. The number that matters is the one from a codebase that existed before
+the library did.
+
 ### False positives
 
 Regenerate with `PYTHONPATH=. uv run python bench/false_positives.py`.
