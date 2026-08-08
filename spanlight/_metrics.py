@@ -4,7 +4,7 @@ import functools
 
 from opentelemetry import metrics
 
-from spanlight.attributes import DETECTIONS_TOTAL, TRACER_NAME
+from spanlight.attributes import DETECTIONS_TOTAL, EXPORT_FAILURES_TOTAL, TRACER_NAME
 
 _service = "unknown"
 
@@ -40,3 +40,22 @@ def _counter() -> metrics.Counter:
 
 def count_detection(detection_type: str) -> None:
     _counter().add(1, {"type": detection_type, "service": _service})
+
+
+@functools.cache
+def _export_failures() -> metrics.Counter:
+    return metrics.get_meter(TRACER_NAME).create_counter(
+        EXPORT_FAILURES_TOTAL,
+        description="Span exports that did not land, by reason.",
+    )
+
+
+def count_export_failure(reason: str) -> None:
+    """The only signal that tracing itself has stopped working.
+
+    `reason` is a short closed set of words, never an exception message. This is
+    a metric label, so an unbounded value would multiply the time series by every
+    distinct error string a failing endpoint can produce, which is how a
+    monitoring bill and a Prometheus instance both fall over.
+    """
+    _export_failures().add(1, {"reason": reason, "service": _service})

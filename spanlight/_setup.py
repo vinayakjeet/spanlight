@@ -62,6 +62,7 @@ def init(
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
     from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
 
+    from spanlight._export import CountedExporter
     from spanlight._metrics import set_service
 
     headers_map = _parse_headers(headers)
@@ -83,7 +84,9 @@ def init(
     )
     provider.add_span_processor(
         BatchSpanProcessor(
-            OTLPSpanExporter(endpoint=traces_endpoint, headers=headers_map)
+            CountedExporter(
+                OTLPSpanExporter(endpoint=traces_endpoint, headers=headers_map)
+            )
         )
     )
     trace.set_tracer_provider(provider)

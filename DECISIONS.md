@@ -387,4 +387,43 @@ short-lived run silently stops reporting, with nothing pointing at the cause.
 The test's docstring says plainly that it guards an SDK promise, so a future
 reader does not go looking for the Spanlight code that implements it.
 
+## 2026-08-08: Export failures are counted, because absence cannot be alerted on
+
+**Context:** SPEC S3 says an exporter outage never breaks the host, and
+`BatchSpanProcessor` already delivers that: it exports on a background thread and
+discards the result, so a dead endpoint cannot reach the caller. The problem is
+the other half. A service whose exports have failed for a week is
+indistinguishable, from inside the process and from Grafana, from a service that
+has been quiet for a week. There is no query for "should have had traces". That
+is precisely the bug that kept the chassis and ShipGate from ever exporting a
+span, undetected for two projects.
+
+**Decision:** `CountedExporter` wraps the real exporter and increments
+`spanlight_export_failures_total{reason,service}`. `reason` is a closed set of
+four words, never an exception message, because it is a metric label and a
+failing endpoint generates unbounded distinct error strings.
+
+**Alternatives considered:** logging the failure instead, which the SDK already
+does and which nobody reads on a free tier with no log pipeline (SPEC non-goal
+12). A healthcheck that queries Tempo for recent traces, rejected because it
+alerts on absence, which fires on a quiet weekend and stays silent on a service
+that is broken but busy.
+
+**Consequences:** `OTLPSpanExporter` never raises. It catches, retries and
+returns `FAILURE`, so against the real exporter every fault, unreachable, 500 or
+hang alike, arrives as `rejected`, and the three finer reasons are unreachable
+through it. They are kept because this wraps any `SpanExporter` and the interface
+permits raising, and they are tested against a stub that does.
+
+**What this cost to get right:** the first version of these tests drove real
+faults through a `BatchSpanProcessor` and asserted the agent finished and the
+counter moved. Every one of them survived deleting the counting entirely,
+re-raising instead of absorbing, and replacing the reason with the raw exception
+message. Two reasons, both worth remembering. The processor runs export on a
+background thread and swallows whatever it throws, so nothing about the wrapper's
+behaviour is observable from out there. And the exception branch was never
+reached at all, because OTLP does not raise, so the tests were exercising one
+path while appearing to cover four. The wrapper is now tested directly, where
+what it does is what the test can see.
+
 <!-- Add entries above this line. -->

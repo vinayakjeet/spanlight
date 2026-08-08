@@ -59,6 +59,12 @@ DETECTION_COST_CEILING_USD = "spanlight.detection.cost.ceiling_usd"
 
 DETECTIONS_TOTAL = "spanlight_detections_total"
 
+# An export that fails is invisible from inside the process: the batch processor
+# swallows it, the agent carries on, and the only symptom is traces that are not
+# there. Nothing is a reliable alert on absence, so the failure has to be counted
+# where it happens.
+EXPORT_FAILURES_TOTAL = "spanlight_export_failures_total"
+
 EVENT_CONTRACT = frozenset(
     {
         DETECTION_TYPE,
