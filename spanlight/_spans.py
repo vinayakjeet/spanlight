@@ -90,7 +90,19 @@ def _span(name: str, attributes: dict[str, Any], phase: str = SPAN) -> Iterator[
     if session_id is not None:
         attributes[SESSION_ID] = session_id
 
-    with get_tracer().start_as_current_span(name, attributes=attributes) as span:
+    # Both defaults are on, and both undo the error contract below. With
+    # `record_exception` the SDK attaches an event carrying `exception.message`
+    # and a full `exception.stacktrace`, so the message this code is careful
+    # never to record arrives anyway, with a stack trace around it.
+    # `set_status_on_exception` then overwrites the status description with that
+    # same message. A redaction canary found both; nothing else would have,
+    # because the attribute we do set is correct and the leak is beside it.
+    with get_tracer().start_as_current_span(
+        name,
+        attributes=attributes,
+        record_exception=False,
+        set_status_on_exception=False,
+    ) as span:
         try:
             yield span
         except Exception as exc:

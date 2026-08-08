@@ -426,4 +426,41 @@ reached at all, because OTLP does not raise, so the tests were exercising one
 path while appearing to cover four. The wrapper is now tested directly, where
 what it does is what the test can see.
 
+## 2026-08-08: The SDK was exporting the exception messages we refused to
+
+**Context:** M1.5 established the error contract: `error.type` is the exception
+class name, never the message, because messages carry user data and give the
+attribute unbounded cardinality. That code was correct and had a test proving an
+email address in a message never reached the span.
+
+M5.4's redaction canary found the messages leaving anyway. OpenTelemetry's
+`start_as_current_span` defaults `record_exception=True`, which attaches an event
+carrying `exception.message` and a full `exception.stacktrace`, and
+`set_status_on_exception=True`, which writes the message into the status
+description. So a raise inside any Spanlight span exported the message, the local
+file paths, and the stack, from the layer below the one being careful.
+
+**Decision:** both are passed `False`. `_span` already sets the status and the
+error type deliberately, so nothing is lost beyond the leak.
+
+**Alternatives considered:** a `SpanProcessor` that strips exception events on
+the way out, rejected because it fixes the symptom after the fact and only for
+spans that pass through a processor we control. Redacting the message and keeping
+the stack trace, rejected because the stack contains local variables' values in
+some formatters and absolute paths in all of them, and neither belongs in a trace
+that a study will publish.
+
+**Consequences:** debugging from a trace alone is harder. `error.type` says a
+`RateLimitError` happened and the span says where in the run, but the message
+that would name the quota is only in the service's own logs. That is the intended
+trade and SPEC non-goal 4 already made it; this decision just makes it true.
+
+**Why the existing tests missed it:** they asserted the right things about the
+attribute Spanlight sets. `test_failure_records_the_class_not_the_message` even
+checked that an email address was absent from `span.attributes`. The leak was not
+in the attributes, it was in `span.events`, which nothing was looking at. An
+allowlist of attributes known to be safe can only ever catch predicted leaks. The
+canary sweeps every name, value, event, status and resource for one improbable
+string, and it found this on its first run.
+
 <!-- Add entries above this line. -->
