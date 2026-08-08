@@ -506,4 +506,46 @@ And `session()` had no way to be named, so a gate run produced a hundred spans a
 called `session`. Fixed by adding `name`, which no amount of reasoning about the
 API had suggested.
 
+## 2026-08-08: ShipGate can only exercise one of the three detectors
+
+**Context:** M5.7 asks for the real workload through the real processor chain,
+twice, with all three detectors firing. Run against Groq with the sampler active
+and export to Grafana on, two consecutive runs both produced: `cost_ceiling` four
+times, `loop` zero, `silent_tool_failure` zero. Trace
+`67d20405451b6c1ec48aa2d5388366dc`.
+
+The cause is structural, not a bug. **ShipGate emits zero tool spans.** It is a
+batch scorer: one session per item, one judge call inside it, no tools and no
+retrieval. Two of the three detectors reason about tool behaviour, so neither can
+fire here no matter how the thresholds are set. Their unit tests pass because
+those tests construct tool spans themselves.
+
+**Decision:** M5.7 stays open and is not marked done against a partial result.
+The one detector ShipGate can exercise is confirmed working twice over on real
+traffic; the other two need an actual agent.
+
+**Consequences, and this one reaches into M7.** The field study is meant to
+measure how agents fail, across loops, silent tool failures and cost. ShipGate
+can supply the cost, latency and provider-error dimensions from real traffic. It
+cannot supply a single data point for the other two, because the workload has no
+tools to fail or repeat. A corpus collected only from ShipGate would report a
+loop rate of zero and a silent-failure rate of zero, and both numbers would be
+artefacts of the workload rather than findings about agents.
+
+So the study needs a real agent, and this portfolio does not yet contain one that
+makes real tool calls. The demo agent in `app/` has a tool, but I wrote it to
+fail on cue, so measuring it measures my own script. That is the same objection
+the M8 learning checkpoint already anticipates: "a skeptical reviewer says the
+field study is just ShipGate's logs with extra steps."
+
+Worth noticing that the answer arrived from running the thing rather than
+reasoning about it. Nothing in the unit suite could have surfaced it: every
+detector test passes, and the workload they pass against does not exist here.
+
+Also recorded: `cost_ceiling` fired four times per run, once per item, because
+each scored item is its own session and each independently crossed the ceiling.
+That is correct given per-item sessions, but it means a detection count is a
+count of affected sessions, not of distinct problems, and M6's dashboards have to
+label it that way.
+
 <!-- Add entries above this line. -->
