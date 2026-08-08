@@ -463,4 +463,47 @@ allowlist of attributes known to be safe can only ever catch predicted leaks. Th
 canary sweeps every name, value, event, status and resource for one improbable
 string, and it found this on its first run.
 
+## 2026-08-08: ShipGate adopts Spanlight, and adoption found what design did not
+
+**Context:** Spanlight claimed three-line adoption while nothing had ever adopted
+it. The demo agent in `app/` does not count, because the same person wrote both
+sides. ShipGate is a CI gate built before this library existed, with its own
+working tracing already in place.
+
+**Decision:** delete `shipgate/tracing.py` entirely and adopt. The gate run is one
+session; each scored item opens a session of its own inside it.
+
+**Alternatives considered:** one session for the whole gate run with items as
+plain spans, which is what BACKLOG originally described. Rejected because
+detector state is per session, so one item's failed tool and the next item's
+model call would be read as a single silent failure. Per-item sessions also match
+what the M7 study counts: a hundred scored items is a hundred runs, not one.
+
+**Consequences:** 29 lines written across four call sites, 78 deleted with
+`tracing.py`. Its 250 tests stayed green. Two of its tests were removed rather
+than ported: they re-tested Spanlight's own init behaviour, and calling `init()`
+in-process installs a global MeterProvider that the test only patched the tracer
+half of, leaving a periodic exporter posting to a dead host for the rest of the
+session. Nine unrelated runner tests failed and the suite went from seconds to
+four and a half minutes. That path belongs in a subprocess, which is where
+Spanlight already tests it.
+
+**What adoption found that designing had not:**
+
+ShipGate's tracing carried both bugs Spanlight had already fixed in its own copy:
+a header parser that never percent-decoded, and an endpoint passed through
+without `/v1/traces`. It had never successfully exported a span to Grafana. That
+is now three projects that shipped the same pair, which is an argument for the
+chassis owning this rather than each fork copying it.
+
+Its item spans recorded `error` as `f"{type(exc).__name__}: {exc}"`, putting every
+provider message into a shared Grafana org.
+
+Its pairwise runner made two model calls per item and traced neither, so the most
+expensive runner was the one whose spend was invisible.
+
+And `session()` had no way to be named, so a gate run produced a hundred spans all
+called `session`. Fixed by adding `name`, which no amount of reasoning about the
+API had suggested.
+
 <!-- Add entries above this line. -->

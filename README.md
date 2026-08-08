@@ -172,9 +172,30 @@ Both numbers are given because only one of them is stable. `record_usage(...)` i
 six physical lines as this repo formats it and one line written wide, so a line
 count partly measures the formatter. Statements survive a reformat.
 
-ShipGate's adoption is M4.2 and is not counted, so this is Spanlight measuring
-itself. The number that matters is the one from a codebase that existed before
-the library did.
+That half is Spanlight measuring itself. Here is the half that counts, from
+ShipGate, a CI gate that existed before this library did and had its own working
+tracing:
+
+| Call site | Statements | Lines |
+|---|---|---|
+| `shipgate/cli.py` (session per gate run) | 3 | 3 |
+| `shipgate/runners/base.py` (session per scored item) | 6 | 6 |
+| `shipgate/runners/judge.py` (judge model call) | 5 | 10 |
+| `shipgate/runners/pairwise.py` (pairwise model call) | 5 | 10 |
+| **per site** | **4.8** | **7.2** |
+
+**29 lines written, 78 deleted.** `shipgate/tracing.py` went entirely: its own
+provider setup, header parsing and flush hook. Its 250 tests stayed green.
+
+Three things that adoption found, which no amount of designing in isolation had:
+
+- ShipGate's tracing had **both** bugs Spanlight had already fixed. Its header
+  parser never percent-decoded, and it passed the endpoint through without
+  `/v1/traces`. It had never successfully exported a span to Grafana.
+- Its item spans recorded `error` as `f"{type(exc).__name__}: {exc}"`, so every
+  provider message went into a shared Grafana org.
+- Its pairwise runner made two model calls per item and traced neither, so the
+  most expensive runner was the one whose spend was invisible.
 
 ### False positives
 

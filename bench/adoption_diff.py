@@ -23,15 +23,26 @@ import pathlib
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 
-# Every place in this repo that adopts the library. ShipGate is M4.2 and is not
-# counted here rather than being guessed at.
+# Every place in this repo that adopts the library. This is Spanlight measuring
+# itself, so it is the flattering half of the number; the sibling below is the
+# one that counts.
 SITES = {
     "llm/client.py": "chassis LLM client, instruments every provider call",
     "app/main.py": "demo app startup",
     "app/routers/agent.py": "demo agent route",
 }
 
-PENDING = {"ShipGate runners, gate CLI": "M4.2"}
+# The number that actually matters. ShipGate was built before Spanlight existed
+# and had its own working tracing, so this is the only measurement here that is
+# not the library grading its own homework. Counted when the repo is present
+# beside this one, skipped otherwise, so the bench still runs from a clean clone.
+SIBLING = pathlib.Path(r"d:/projects/shipgate")
+SIBLING_SITES = {
+    "shipgate/cli.py": "gate CLI, one session per run",
+    "shipgate/runners/base.py": "item scoring, one session per item",
+    "shipgate/runners/judge.py": "judge model call",
+    "shipgate/runners/pairwise.py": "pairwise model call",
+}
 
 
 def _imported_names(tree: ast.AST) -> set[str]:
@@ -159,8 +170,35 @@ def main() -> None:
         f"{total_lines / sites:>4.1f} lines\n"
     )
 
-    for site, milestone in PENDING.items():
-        print(f"not yet measured: {site} ({milestone})")
+    if not SIBLING.exists():
+        print(f"{SIBLING} not present, skipping the adopting-codebase measurement")
+        return
+
+    print("\nShipGate, which existed before this library did:\n")
+    sibling_lines = 0
+    sibling_statements = 0
+    width = max(len(site) for site in SIBLING_SITES)
+    for site, description in SIBLING_SITES.items():
+        counted, statements = adoption_lines(SIBLING / site)
+        sibling_lines += len(counted)
+        sibling_statements += statements
+        print(
+            f"{site:{width}}  {statements:>2} statements, "
+            f"{len(counted):>2} lines   {description}"
+        )
+
+    sites = len(SIBLING_SITES)
+    print(
+        f"\n{'total':{width}}  {sibling_statements:>2} statements, "
+        f"{sibling_lines:>2} lines across {sites} sites"
+    )
+    print(
+        f"{'per site':{width}}  {sibling_statements / sites:>4.1f} statements, "
+        f"{sibling_lines / sites:>4.1f} lines"
+    )
+    print(
+        "\nreplaced: shipgate/tracing.py, 78 lines of its own tracing setup, deleted"
+    )
 
 
 if __name__ == "__main__":
