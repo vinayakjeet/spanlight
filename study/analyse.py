@@ -206,6 +206,32 @@ def main() -> None:
     print("    retry from a slow provider. To see retries you have to instrument")
     print("    inside the retry loop, not around the call that contains it.")
 
+    # The limitation that governs how much of the taxonomy this corpus can
+    # support. Printed rather than left for a reader to infer from a table of
+    # zeros, because a study that quietly omits the classes it could not observe
+    # reads as though they did not happen.
+    clean_share = len(clean) / total
+    if clean_share == 1.0:
+        print("\n  LIMITATION: every session in this corpus succeeded.")
+        print(f"    {total}/{total} clean, zero provider errors, zero malformed")
+        print("    replies. Groq did not fail once in 46 minutes.")
+        print("    Taxonomy classes A2, A3, A6 and A7 have no instances, so this")
+        print("    corpus cannot measure how this workload fails. It can only")
+        print("    measure what it costs and how long it takes when nothing goes")
+        print("    wrong. Any failure-rate claim from this data would be a claim")
+        print("    about a 46-minute window on one provider, not about agents.")
+
+    fired_share = sum(
+        1 for r in runs.values() if "cost_ceiling" in r["detections"]
+    ) / total
+    if fired_share > 0.9:
+        print("\n  Prediction 2 confirmed, and it is a warning not a success.")
+        print(f"    cost_ceiling fired on {fired_share:.0%} of sessions because the")
+        print("    ceiling was set below the median session cost. A detector that")
+        print("    fires on everything carries the same information as one that")
+        print("    fires on nothing. The rate is a statement about the threshold,")
+        print("    and quoting it without the threshold beside it is meaningless.")
+
 
 if __name__ == "__main__":
     main()
