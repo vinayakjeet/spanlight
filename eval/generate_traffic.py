@@ -39,7 +39,7 @@ from opentelemetry import metrics, trace  # noqa: E402
 from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor  # noqa: E402
 
 import spanlight  # noqa: E402
-from spanlight.attributes import DETECTION  # noqa: E402
+from spanlight.attributes import DETECTION, SESSION_ID  # noqa: E402
 
 
 class Tally(SpanProcessor):
@@ -53,11 +53,18 @@ class Tally(SpanProcessor):
 
     def __init__(self) -> None:
         self.fired: dict[str, int] = {}
+        # One session id per detection type, kept so the run can hand back a
+        # session worth opening. The first session id is almost always a healthy
+        # one, and pasting that into the session dashboard shows four correct
+        # panels with nothing interesting in any of them.
+        self.example: dict[str, str] = {}
 
     def on_end(self, span: ReadableSpan) -> None:
-        kind = (span.attributes or {}).get(DETECTION)
+        attributes = span.attributes or {}
+        kind = attributes.get(DETECTION)
         if kind:
             self.fired[kind] = self.fired.get(kind, 0) + 1
+            self.example.setdefault(kind, attributes.get(SESSION_ID, "?"))
 
 ENV_FILE = pathlib.Path(__file__).resolve().parents[1] / ".env"
 
@@ -205,7 +212,7 @@ def main() -> None:
 
     print(f"\n{count} sessions in {time.time() - started:.0f}s, service {SERVICE}")
     for kind, n in sorted(tally.fired.items()):
-        print(f"  {kind:22} {n:>3}")
+        print(f"  {kind:22} {n:>3}   session {tally.example.get(kind, '?')}")
     missing = {"loop", "cost_ceiling", "silent_tool_failure", "retry_amplification"} - set(
         tally.fired
     )
