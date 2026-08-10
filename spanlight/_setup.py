@@ -134,12 +134,14 @@ def _register_default_detectors(cost_ceiling_usd: float | None) -> None:
     from spanlight._detectors import (
         cost_ceiling_detector,
         loop_detector,
+        retry_amplification_detector,
         silent_tool_failure_detector,
         watch_for_silent_failure,
     )
 
     registry.clear_detectors()
     registry.register(loop_detector)
+    registry.register(retry_amplification_detector())
     registry.register(watch_for_silent_failure)
     registry.register(silent_tool_failure_detector, phase=SESSION)
     if cost_ceiling_usd is not None:

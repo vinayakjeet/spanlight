@@ -20,6 +20,7 @@ from spanlight._metrics import record_session_cost
 from spanlight._propagation import remote_context, remote_session_id
 from spanlight._session import bind, current_session_id
 from spanlight.attributes import (
+    ATTEMPT_NUMBER,
     ERROR_TYPE,
     GEN_AI_OPERATION_NAME,
     GEN_AI_REQUEST_MODEL,
@@ -207,6 +208,28 @@ def model_span(
         attributes[GEN_AI_REQUEST_MODEL] = model
 
     with _span(f"{operation} {model}" if model else operation, attributes) as span:
+        yield span
+
+
+@contextmanager
+def attempt_span(number: int) -> Iterator[Span]:
+    """One try inside a retry loop, as a child of the call that contains it.
+
+    The model span deliberately stays wrapped around the whole loop: its duration
+    is what the caller actually waited, backoff and throttle sleeps included, and
+    a span per attempt on its own would report only the last try and make a call
+    that spent forty seconds rate limited look fast.
+
+    The cost of that choice was that retries became invisible. Three attempts and
+    one attempt produced the same span, differing only in duration, so a
+    retry-absorbed failure appeared nowhere: not in the result, which records a
+    success, and not in the span count, which is one either way. Measured over
+    500 real sessions before this existed (study/coverage.md).
+
+    So both. The parent answers what the call cost, the children answer what it
+    took, and the gap between them is the wait.
+    """
+    with _span(f"attempt {number}", {ATTEMPT_NUMBER: number}) as span:
         yield span
 
 

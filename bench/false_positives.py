@@ -34,6 +34,7 @@ import spanlight._spans as spans_module
 from spanlight._detector_framework import SESSION, registry
 from spanlight._detectors import (
     loop_detector,
+    retry_amplification_detector,
     silent_tool_failure_detector,
     watch_for_silent_failure,
 )
@@ -91,6 +92,62 @@ def transient_retry() -> None:
     _model()
 
 
+def model_retry_once() -> None:
+    """One transient provider failure, then success. The single most common thing
+    a free tier does, and the pattern a retry detector must never fire on."""
+    with spanlight.model_span(provider="groq"):
+        for attempt in (1, 2):
+            if attempt == 1:
+                try:
+                    with spanlight.attempt_span(attempt):
+                        raise TransientFailure("503")
+                except TransientFailure:
+                    pass
+            else:
+                with spanlight.attempt_span(attempt):
+                    pass
+
+
+def model_retry_twice() -> None:
+    """Two failures then success, on each of two calls. Four failed attempts in
+    one session and none of them alarming on its own, which is exactly the case
+    a per-call threshold misses and a per-session one has to survive."""
+    for _ in range(2):
+        with spanlight.model_span(provider="groq"):
+            for attempt in (1, 2, 3):
+                if attempt < 3:
+                    try:
+                        with spanlight.attempt_span(attempt):
+                            raise TransientFailure("429")
+                    except TransientFailure:
+                        pass
+                else:
+                    with spanlight.attempt_span(attempt):
+                        pass
+
+
+def model_retry_storm() -> None:
+    """Not healthy, and here on purpose. Three calls, each burning two attempts
+    before it lands: six failures to do three calls' worth of work.
+
+    A false-positive corpus alone cannot tell a well-tuned detector from one
+    that never fires, and this project has shipped a check that could not fail
+    twice already. So the bench carries one pattern the detector is required to
+    catch, scored separately."""
+    for _ in range(3):
+        with spanlight.model_span(provider="groq"):
+            for attempt in (1, 2, 3):
+                if attempt < 3:
+                    try:
+                        with spanlight.attempt_span(attempt):
+                            raise TransientFailure("429")
+                    except TransientFailure:
+                        pass
+                else:
+                    with spanlight.attempt_span(attempt):
+                        pass
+
+
 def multi_tool_plan() -> None:
     """A plan touching several different tools once each."""
     for tool in ("search", "lookup_scheme", "check_eligibility", "summarise"):
@@ -135,10 +192,18 @@ PATTERNS: dict[str, Callable[[], None]] = {
     "single_step": single_step,
     "paginated_search": paginated_search,
     "transient_retry": transient_retry,
+    "model_retry_once": model_retry_once,
+    "model_retry_twice": model_retry_twice,
     "multi_tool_plan": multi_tool_plan,
     "repeated_lookup": repeated_lookup_distinct_entities,
     "recovery_via_another_tool": recovery_via_another_tool,
     "long_research": long_research,
+}
+
+# Scored separately, and never mixed into the rate above. A detection here is
+# the detector working; a detection above is the detector being wrong.
+POSITIVE_CONTROLS: dict[str, tuple[Callable[[], None], str]] = {
+    "model_retry_storm": (model_retry_storm, "retry_amplification"),
 }
 
 
@@ -174,12 +239,16 @@ def measure(sessions_per_pattern: int = SESSIONS_PER_PATTERN) -> dict[str, Count
 
     registry.clear_detectors()
     registry.register(loop_detector)
+    registry.register(retry_amplification_detector())
     registry.register(watch_for_silent_failure)
     registry.register(silent_tool_failure_detector, phase=SESSION)
 
     results: dict[str, Counter] = {}
     try:
-        for name, pattern in PATTERNS.items():
+        for name, pattern in {
+            **PATTERNS,
+            **{k: v[0] for k, v in POSITIVE_CONTROLS.items()},
+        }.items():
             fired: Counter = Counter()
             for _ in range(sessions_per_pattern):
                 exporter.clear()
@@ -203,26 +272,35 @@ def measure(sessions_per_pattern: int = SESSIONS_PER_PATTERN) -> dict[str, Count
 
 def main() -> None:
     results = measure()
-    kinds = ("loop", "silent_tool_failure")
+    kinds = ("loop", "silent_tool_failure", "retry_amplification")
 
     width = max(len(name) for name in results)
     print(f"{sessions_note(results)}\n")
-    print(f"{'pattern':{width}}  {'loop':>18}  {'silent_tool_failure':>22}")
+    header = "  ".join(f"{kind:>19}" for kind in kinds)
+    print(f"{'pattern':{width}}  {header}")
     for name, fired in results.items():
         cells = []
         for kind in kinds:
             n, total = fired[kind], fired["sessions"]
             low, high = wilson(n, total)
-            cells.append(f"{n:>3}/{total:<3} {low:5.1%}-{high:5.1%}")
-        print(f"{name:{width}}  {cells[0]:>18}  {cells[1]:>22}")
+            cells.append(f"{f'{n}/{total}':>7} {low:5.1%}-{high:5.1%}")
+        print(f"{name:{width}}  " + "  ".join(f"{c:>19}" for c in cells))
 
     print()
+    healthy = {name: fired for name, fired in results.items() if name in PATTERNS}
     for kind in kinds:
-        n = sum(f[kind] for f in results.values())
-        total = sum(f["sessions"] for f in results.values())
+        n = sum(f[kind] for f in healthy.values())
+        total = sum(f["sessions"] for f in healthy.values())
         low, high = wilson(n, total)
         verdict = "clean" if n == 0 else "MISFIRES"
         print(f"{kind:22} {n:>4}/{total:<4}  95% CI {low:5.1%} to {high:5.1%}  {verdict}")
+
+    print("\npositive controls, which are required to fire:")
+    for name, (_, kind) in POSITIVE_CONTROLS.items():
+        fired = results[name]
+        n, total = fired[kind], fired["sessions"]
+        verdict = "caught" if n == total else "MISSED"
+        print(f"  {name:22} {kind:22} {n:>4}/{total:<4}  {verdict}")
 
 
 def sessions_note(results: dict[str, Counter]) -> str:

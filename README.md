@@ -301,6 +301,7 @@ all.
 | `spanlight.tool.args_fingerprint` | hashed | Whether two calls matched, never what they were |
 | `spanlight.retrieval.index` | safe | Which index, e.g. `schemes-v3` |
 | `spanlight.retrieval.k` | derived | How many chunks |
+| `spanlight.attempt.number` | derived | Which try inside a retry loop, so a reader can see how hard the provider was to reach |
 | `spanlight.cold_start` | derived | First span after a spin-up |
 | `spanlight.semconv_version` | safe | Convention revision |
 | `error.type` | safe | Exception class, never the message |

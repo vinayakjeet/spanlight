@@ -6,9 +6,12 @@ from opentelemetry.trace import Span, StatusCode
 
 from spanlight._detector_framework import COST_TOTAL, Detection
 from spanlight.attributes import (
+    ATTEMPT_NUMBER,
     COST_USD_EQUIVALENT,
     DETECTION_COST_CEILING_USD,
     DETECTION_COST_USD_EQUIVALENT,
+    DETECTION_RETRY_FAILED_ATTEMPTS,
+    DETECTION_RETRY_THRESHOLD,
     DETECTION_TOOL_CALLS,
     DETECTION_TOOL_NAME,
     GEN_AI_SYSTEM,
@@ -18,9 +21,19 @@ from spanlight.attributes import (
 
 LOOP_THRESHOLD = 3
 
+# Failed attempts in one session before this is amplification rather than a
+# provider having a bad minute. Set from `bench/false_positives.py`, and the
+# provisional 4 did not survive it: two calls that each retried twice is four
+# failures, and that pattern was written down as healthy before the measurement
+# ran. Reclassifying it afterwards to save the threshold would have been the
+# exact move this project spent a field study warning about, so the threshold
+# moved instead.
+RETRY_THRESHOLD = 5
+
 LOOP = "loop"
 COST_CEILING = "cost_ceiling"
 SILENT_TOOL_FAILURE = "silent_tool_failure"
+RETRY_AMPLIFICATION = "retry_amplification"
 
 
 def loop_detector(state: dict, span: Span) -> str | None:
@@ -101,6 +114,48 @@ def cost_ceiling_detector(ceiling_usd: float) -> Callable[[dict, Span], str | No
             {
                 DETECTION_COST_USD_EQUIVALENT: total,
                 DETECTION_COST_CEILING_USD: ceiling_usd,
+            },
+        )
+
+    return detect
+
+
+def retry_amplification_detector(
+    threshold: int = RETRY_THRESHOLD,
+) -> Callable[[dict, Span], Detection | None]:
+    """Fire when a session spends too many tries getting its work done.
+
+    Counts failed attempts across the whole session rather than within one call.
+    Five calls that each quietly retried twice is a run burning its budget on
+    backoff, and no single call in it crosses a per-call threshold. The
+    session is the unit that has a budget, so the session is the unit counted.
+
+    Only attempts that ended ERROR count. A successful attempt is work, and
+    counting it would turn this into a measure of how much the session did.
+
+    This exists because of a measurement, not a hunch. Across 500 real sessions
+    the study could not tell a retried call from a slow one, because the model
+    span wrapped a client that retried inside itself. Attempt spans made the
+    difference visible, and this reads them.
+    """
+
+    def detect(state: dict, span: Span) -> Detection | None:
+        attributes = span.attributes or {}
+        if attributes.get(ATTEMPT_NUMBER) is None:
+            return None
+        if span.status.status_code is not StatusCode.ERROR:
+            return None
+
+        failed = state.get("failed_attempts", 0) + 1
+        state["failed_attempts"] = failed
+        if failed < threshold:
+            return None
+
+        return Detection(
+            RETRY_AMPLIFICATION,
+            {
+                DETECTION_RETRY_FAILED_ATTEMPTS: failed,
+                DETECTION_RETRY_THRESHOLD: threshold,
             },
         )
 

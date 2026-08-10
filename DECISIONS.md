@@ -506,6 +506,55 @@ And `session()` had no way to be named, so a gate run produced a hundred spans a
 called `session`. Fixed by adding `name`, which no amount of reasoning about the
 API had suggested.
 
+## 2026-08-10: A fourth detector, because a measurement asked for it
+
+**Context:** SPEC non-goal 10 said no fourth detector, and it was right to. Three
+measured properly beats six nobody trusts, and every observability tool ships a
+pile of rules that fire on nothing in particular. The field study then measured
+something that changed the argument: retries are invisible to this library. The
+model span wraps a client that retries inside itself, so three attempts and one
+attempt produce the same span, differing only in duration. Over 500 real sessions
+a retried call could not be told from a slow one.
+
+**Decision:** an attempt span per try inside the retry loop, and a
+`retry_amplification` detector that reads them. The model span still wraps the
+whole loop, unchanged, because its duration is what the caller actually waited
+and a span per attempt on its own would report the last try and make a call that
+spent forty seconds rate limited look fast. Both, not either: the parent says
+what the call cost, the children say what it took, and the gap is the wait.
+
+**Alternatives considered.** An event per attempt rather than a span. Cheaper,
+and detectors reason over spans, so a rule reading events would be the only one
+of its kind. Rejected for consistency rather than for cost.
+
+Counting attempts per call rather than per session. A per-call threshold misses
+the case worth catching: five calls that each quietly retried twice is a run
+burning its budget on backoff and no single call in it looks remarkable. The
+session is the unit that has a budget.
+
+**Consequences, and one of them is the point of the whole exercise.** This is the
+first detector in the project that can fire on ShipGate. Two of the other three
+cannot, at any threshold, because a batch scorer emits no tool spans. ShipGate
+does retry. So the coverage table gains a column that is not all crosses for the
+one workload actually measured here.
+
+The threshold is the part worth recording. It shipped provisionally at 4, and
+`bench/false_positives.py` fired on 100% of a pattern written down as healthy
+before the measurement ran: two calls that each retried twice. The tempting fix
+was to reclassify the pattern, since four failures out of six attempts does look
+like amplification on inspection. That is retrofitting a label to save a
+threshold, which is the exact move the field study spent nine sections warning
+about, so the threshold moved to 5 instead and the pattern stayed healthy.
+
+The bench also gained a positive control, scored separately and required to fire.
+A false-positive corpus on its own cannot tell a well-tuned detector from one
+that never fires, and this project has shipped a check that could not fail twice
+already.
+
+Cost: this changes `llm/client.py`, which all eleven projects fork, so every one
+of them gets attempt spans whether it wants them or not. One extra span per model
+call in the common case, and that is the price of seeing retries at all.
+
 ## 2026-08-09: Where the SPEC's ten assumptions landed
 
 **Context:** the assumptions were written before the build and three of them

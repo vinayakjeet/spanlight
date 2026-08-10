@@ -4,10 +4,11 @@ import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 import spanlight
-from bench.false_positives import measure, wilson
+from bench.false_positives import PATTERNS, measure, wilson
 from spanlight._detector_framework import SESSION, registry
 from spanlight._detectors import (
     loop_detector,
+    retry_amplification_detector,
     silent_tool_failure_detector,
     watch_for_silent_failure,
 )
@@ -31,6 +32,7 @@ class ToolBroke(Exception):
 @pytest.fixture(autouse=True)
 def _registered() -> None:
     registry.register(loop_detector)
+    registry.register(retry_amplification_detector())
     registry.register(watch_for_silent_failure)
     registry.register(silent_tool_failure_detector, phase=SESSION)
 
@@ -44,10 +46,13 @@ def test_healthy_sessions_stay_below_the_false_positive_budget() -> None:
     mistake was in `LOOP_THRESHOLD` until this was measured.
     """
     results = measure(sessions_per_pattern=SESSIONS_PER_PATTERN)
-    total = sum(counts["sessions"] for counts in results.values())
+    # Positive controls are in there to prove the detectors can fire at all, and
+    # counting them here would report a working detector as a noisy one.
+    healthy = {name: counts for name, counts in results.items() if name in PATTERNS}
+    total = sum(counts["sessions"] for counts in healthy.values())
 
-    for kind in ("loop", "silent_tool_failure"):
-        fired = sum(counts[kind] for counts in results.values())
+    for kind in ("loop", "silent_tool_failure", "retry_amplification"):
+        fired = sum(counts[kind] for counts in healthy.values())
         _, upper = wilson(fired, total)
         assert fired / total <= MAX_FALSE_POSITIVE_RATE, (
             f"{kind} fired on {fired}/{total} healthy sessions "

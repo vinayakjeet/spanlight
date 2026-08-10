@@ -36,8 +36,14 @@ class ChatClient:
     ) -> ChatResponse:
         provider_impl = get_provider(provider)
 
+        # Counts tries across the whole retry loop. Tenacity re-invokes the
+        # function rather than passing a number in, so the count has to live
+        # outside it. A list because a closure cannot rebind an int.
+        tries = [0]
+
         @retry_with_backoff(max_attempts=self._max_retry_attempts)
         async def _attempt() -> ChatResponse:
+            tries[0] += 1
             # The gate is checked inside the retry loop, not once before it.
             # A 429 trips the throttle with the delay the provider asked for, and
             # only a gate inside the loop makes the next attempt honour it.
@@ -50,11 +56,16 @@ class ChatClient:
             if wait > 0:
                 await asyncio.sleep(wait)
 
-            try:
-                return await provider_impl.chat_completion(messages, **kwargs)
-            except RateLimitError as exc:
-                await self._throttle.trip(provider, exc.retry_after)
-                raise
+            # Opened after the throttle sleep, so an attempt's duration is the
+            # request rather than the queueing in front of it. The wait is still
+            # in the parent, which is where a reader looks for what the call
+            # cost in wall clock.
+            with spanlight.attempt_span(tries[0]):
+                try:
+                    return await provider_impl.chat_completion(messages, **kwargs)
+                except RateLimitError as exc:
+                    await self._throttle.trip(provider, exc.retry_after)
+                    raise
 
         # The span wraps the retry loop rather than each attempt, so its duration
         # is what the caller actually waited, throttle sleeps and backoff

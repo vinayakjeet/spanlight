@@ -15,6 +15,7 @@ from spanlight._propagation import headers
 from spanlight._session import current_session_id
 from spanlight._setup import init
 from spanlight._spans import (
+    attempt_span,
     fingerprint,
     get_tracer,
     model,
@@ -27,6 +28,7 @@ from spanlight._spans import (
 from spanlight._usage import cost_usd_equivalent, record_usage
 
 __all__ = [
+    "attempt_span",
     "cost_usd_equivalent",
     "current_session_id",
     "fingerprint",

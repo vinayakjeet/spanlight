@@ -35,6 +35,13 @@ TOOL_ARGS_FINGERPRINT = "spanlight.tool.args_fingerprint"
 RETRIEVAL_INDEX = "spanlight.retrieval.index"
 RETRIEVAL_K = "spanlight.retrieval.k"
 
+# One per attempt inside a retry loop, 1-based. The model span still wraps the
+# whole loop, because its duration is what the caller actually waited, backoff
+# and throttle sleeps included. These are its children, and without them a call
+# that succeeded on the fourth try is indistinguishable from one that succeeded
+# on the first.
+ATTEMPT_NUMBER = "spanlight.attempt.number"
+
 COLD_START = "spanlight.cold_start"
 
 ERROR_TYPE = "error.type"
@@ -56,6 +63,8 @@ DETECTION_TOOL_NAME = "spanlight.detection.tool.name"
 DETECTION_TOOL_CALLS = "spanlight.detection.tool.calls"
 DETECTION_COST_USD_EQUIVALENT = "spanlight.detection.cost.usd_equivalent"
 DETECTION_COST_CEILING_USD = "spanlight.detection.cost.ceiling_usd"
+DETECTION_RETRY_FAILED_ATTEMPTS = "spanlight.detection.retry.failed_attempts"
+DETECTION_RETRY_THRESHOLD = "spanlight.detection.retry.threshold"
 
 DETECTIONS_TOTAL = "spanlight_detections_total"
 
@@ -93,6 +102,8 @@ EVENT_CONTRACT = frozenset(
         DETECTION_TOOL_CALLS,
         DETECTION_COST_USD_EQUIVALENT,
         DETECTION_COST_CEILING_USD,
+        DETECTION_RETRY_FAILED_ATTEMPTS,
+        DETECTION_RETRY_THRESHOLD,
     }
 )
 
@@ -111,6 +122,7 @@ CONTRACT = frozenset(
         TOOL_ARGS_FINGERPRINT,
         RETRIEVAL_INDEX,
         RETRIEVAL_K,
+        ATTEMPT_NUMBER,
         COLD_START,
         SEMCONV_VERSION_ATTRIBUTE,
         ERROR_TYPE,
