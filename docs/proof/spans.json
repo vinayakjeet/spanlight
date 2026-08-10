@@ -2,9 +2,9 @@
   {
     "name": "session",
     "status": "UNSET",
-    "duration_ms": 2.8647,
+    "duration_ms": 1.2478,
     "attributes": {
-      "spanlight.session.id": "a13a438d37984162970aac732395e0f7",
+      "spanlight.session.id": "eae4c117c5f846a290e9e76334c4cd55",
       "spanlight.detection": "silent_tool_failure"
     },
     "events": [
@@ -20,11 +20,11 @@
   {
     "name": "tool lookup_scheme",
     "status": "ERROR",
-    "duration_ms": 0.1123,
+    "duration_ms": 0.0482,
     "attributes": {
       "spanlight.tool.name": "lookup_scheme",
-      "spanlight.tool.args_fingerprint": "62ca1a2c52bfd859",
-      "spanlight.session.id": "a13a438d37984162970aac732395e0f7",
+      "spanlight.tool.args_fingerprint": "5ac15744d1c2e8f5",
+      "spanlight.session.id": "eae4c117c5f846a290e9e76334c4cd55",
       "error.type": "SchemeIndexUnavailable"
     },
     "events": []
@@ -32,22 +32,22 @@
   {
     "name": "retrieve demo-index",
     "status": "UNSET",
-    "duration_ms": 0.0584,
+    "duration_ms": 0.0238,
     "attributes": {
       "spanlight.retrieval.index": "demo-index",
       "spanlight.retrieval.k": 3,
-      "spanlight.session.id": "a13a438d37984162970aac732395e0f7"
+      "spanlight.session.id": "eae4c117c5f846a290e9e76334c4cd55"
     },
     "events": []
   },
   {
     "name": "chat",
     "status": "UNSET",
-    "duration_ms": 0.7393,
+    "duration_ms": 0.3315,
     "attributes": {
       "gen_ai.system": "mock",
       "gen_ai.operation.name": "chat",
-      "spanlight.session.id": "a13a438d37984162970aac732395e0f7",
+      "spanlight.session.id": "eae4c117c5f846a290e9e76334c4cd55",
       "gen_ai.response.model": "mock-echo",
       "gen_ai.usage.input_tokens": 8,
       "gen_ai.usage.output_tokens": 10,

@@ -25,6 +25,7 @@ from __future__ import annotations
 import io
 import json
 import pathlib
+import re
 import sys
 from contextlib import redirect_stdout
 
@@ -48,6 +49,12 @@ from spanlight.attributes import DETECTION, ERROR_TYPE, SESSION_ID  # noqa: E402
 OUT = pathlib.Path(__file__).resolve().parents[1] / "docs" / "proof"
 
 PROMPT = "fail-tool: which subsidy applies to a marginal farmer"
+
+# The startup log line carries the configured OTLP endpoint, which names the
+# Grafana stack and its region. Not a credential, and useless without the token,
+# but this artifact is committed to a public repo and the endpoint is no part of
+# what it is demonstrating.
+URL = re.compile(r"https?://[^\s\"']+")
 
 
 def waterfall(spans: list) -> str:
@@ -186,7 +193,10 @@ def main() -> None:
             ),
             status_code=response.status_code,
             reply=json.dumps(response.json(), indent=2)[:600],
-            logs=(logs.strip() or "(the host logged nothing at all)"),
+            logs=(
+                URL.sub("<otlp-endpoint>", logs.strip())
+                or "(the host logged nothing at all)"
+            ),
         ),
         encoding="utf-8",
     )
