@@ -6,6 +6,7 @@ import yaml
 from opentelemetry import trace
 from pydantic import BaseModel, ValidationError
 
+from spanlight._metrics import record_token_usage
 from spanlight.attributes import (
     COST_USD,
     COST_USD_EQUIVALENT,
@@ -98,3 +99,6 @@ def record_usage(
         equivalent = cost_usd_equivalent(provider, tokens_in, tokens_out)
         if equivalent is not None:
             span.set_attribute(COST_USD_EQUIVALENT, equivalent)
+
+        record_token_usage(provider, "input", tokens_in)
+        record_token_usage(provider, "output", tokens_out)

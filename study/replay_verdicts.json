@@ -1,0 +1,341 @@
+{
+  "provider": "groq",
+  "model": "llama-3.3-70b-versatile",
+  "rubric": "v1",
+  "expected": "billing",
+  "stub_output": "billing",
+  "repeats": 3,
+  "ran": "2026-08-09T13:16:49",
+  "by_ticket": {
+    "I was charged twice this month": {
+      "verdicts": {
+        "pass": 3
+      },
+      "stable": true,
+      "input_tokens": [
+        101
+      ],
+      "reasons": [
+        "The model correctly identified the intent as 'billing' when the user reported being charged twice, which is a billing-related issue.",
+        "the model output matches the expected intent of billing",
+        "The model correctly identified the intent as 'billing' which matches the expected intent."
+      ]
+    },
+    "the app crashes on launch": {
+      "verdicts": {
+        "fail": 3
+      },
+      "stable": true,
+      "input_tokens": [
+        100
+      ],
+      "reasons": [
+        "the app crashing on launch is unrelated to billing, expected intent should be related to technical issue or app support",
+        "Model output 'billing' does not match the context of the ticket, which describes a technical issue with the app crashing on launch, and is unrelated to billing issues",
+        "the app crashes on launch is unrelated to billing, a more relevant intent would be technical issue or app support"
+      ]
+    },
+    "refund my last invoice": {
+      "verdicts": {
+        "pass": 3
+      },
+      "stable": true,
+      "input_tokens": [
+        99
+      ],
+      "reasons": [
+        "the model output matches the expected intent of billing",
+        "Model output matches expected intent",
+        "model correctly identified the intent as billing for the given ticket"
+      ]
+    },
+    "cannot log in after the update": {
+      "verdicts": {
+        "fail": 3
+      },
+      "stable": true,
+      "input_tokens": [
+        101
+      ],
+      "reasons": [
+        "The user is reporting an issue with logging in after an update, which is more related to a technical or account issue, not billing.",
+        "the model output does not match the context of the ticket, which is about login issues after an update, not billing",
+        "The model output 'billing' does not match the context of the ticket, which is related to a login issue after an update, not a billing issue."
+      ]
+    },
+    "my card was declined for no reason": {
+      "verdicts": {
+        "pass": 3
+      },
+      "stable": true,
+      "input_tokens": [
+        102
+      ],
+      "reasons": [
+        "the model output matches the expected intent",
+        "The model output matches the expected intent of 'billing' for the given ticket.",
+        "the model correctly identified the intent as 'billing' which matches the expected intent for a user reporting a declined card transaction"
+      ]
+    },
+    "the export button does nothing": {
+      "verdicts": {
+        "fail": 3
+      },
+      "stable": true,
+      "input_tokens": [
+        100
+      ],
+      "reasons": [
+        "the issue described is related to a technical problem with the export button, not billing",
+        "The export button does nothing is more related to a technical issue, possibly with the interface or functionality, which is not directly related to billing.",
+        "export button is unrelated to billing"
+      ]
+    },
+    "I want to cancel my subscription": {
+      "verdicts": {
+        "pass": 3
+      },
+      "stable": true,
+      "input_tokens": [
+        101
+      ],
+      "reasons": [
+        "The model output matches the expected intent of billing for the given ticket.",
+        "model correctly identified the intent as billing for a subscription cancellation query",
+        "Model output matches expected intent"
+      ]
+    },
+    "the totals do not add up": {
+      "verdicts": {
+        "pass": 3
+      },
+      "stable": true,
+      "input_tokens": [
+        101
+      ],
+      "reasons": [
+        "the model correctly identified the intent as 'billing' when the user reported an issue with totals not adding up",
+        "Model output matches expected intent",
+        "the model correctly identified the intent as 'billing' which matches the expected intent"
+      ]
+    }
+  },
+  "calls": [
+    {
+      "verdict": "pass",
+      "reason": "The model correctly identified the intent as 'billing' when the user reported being charged twice, which is a billing-related issue.",
+      "input_tokens": 101,
+      "output_tokens": 38,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "I was charged twice this month",
+      "attempt": 0
+    },
+    {
+      "verdict": "pass",
+      "reason": "the model output matches the expected intent of billing",
+      "input_tokens": 101,
+      "output_tokens": 22,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "I was charged twice this month",
+      "attempt": 1
+    },
+    {
+      "verdict": "pass",
+      "reason": "The model correctly identified the intent as 'billing' which matches the expected intent.",
+      "input_tokens": 101,
+      "output_tokens": 29,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "I was charged twice this month",
+      "attempt": 2
+    },
+    {
+      "verdict": "fail",
+      "reason": "the app crashing on launch is unrelated to billing, expected intent should be related to technical issue or app support",
+      "input_tokens": 100,
+      "output_tokens": 34,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "the app crashes on launch",
+      "attempt": 0
+    },
+    {
+      "verdict": "fail",
+      "reason": "Model output 'billing' does not match the context of the ticket, which describes a technical issue with the app crashing on launch, and is unrelated to billing issues",
+      "input_tokens": 100,
+      "output_tokens": 45,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "the app crashes on launch",
+      "attempt": 1
+    },
+    {
+      "verdict": "fail",
+      "reason": "the app crashes on launch is unrelated to billing, a more relevant intent would be technical issue or app support",
+      "input_tokens": 100,
+      "output_tokens": 34,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "the app crashes on launch",
+      "attempt": 2
+    },
+    {
+      "verdict": "pass",
+      "reason": "the model output matches the expected intent of billing",
+      "input_tokens": 99,
+      "output_tokens": 22,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "refund my last invoice",
+      "attempt": 0
+    },
+    {
+      "verdict": "pass",
+      "reason": "Model output matches expected intent",
+      "input_tokens": 99,
+      "output_tokens": 18,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "refund my last invoice",
+      "attempt": 1
+    },
+    {
+      "verdict": "pass",
+      "reason": "model correctly identified the intent as billing for the given ticket",
+      "input_tokens": 99,
+      "output_tokens": 24,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "refund my last invoice",
+      "attempt": 2
+    },
+    {
+      "verdict": "fail",
+      "reason": "The user is reporting an issue with logging in after an update, which is more related to a technical or account issue, not billing.",
+      "input_tokens": 101,
+      "output_tokens": 40,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "cannot log in after the update",
+      "attempt": 0
+    },
+    {
+      "verdict": "fail",
+      "reason": "the model output does not match the context of the ticket, which is about login issues after an update, not billing",
+      "input_tokens": 101,
+      "output_tokens": 36,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "cannot log in after the update",
+      "attempt": 1
+    },
+    {
+      "verdict": "fail",
+      "reason": "The model output 'billing' does not match the context of the ticket, which is related to a login issue after an update, not a billing issue.",
+      "input_tokens": 101,
+      "output_tokens": 44,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "cannot log in after the update",
+      "attempt": 2
+    },
+    {
+      "verdict": "pass",
+      "reason": "the model output matches the expected intent",
+      "input_tokens": 102,
+      "output_tokens": 20,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "my card was declined for no reason",
+      "attempt": 0
+    },
+    {
+      "verdict": "pass",
+      "reason": "The model output matches the expected intent of 'billing' for the given ticket.",
+      "input_tokens": 102,
+      "output_tokens": 29,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "my card was declined for no reason",
+      "attempt": 1
+    },
+    {
+      "verdict": "pass",
+      "reason": "the model correctly identified the intent as 'billing' which matches the expected intent for a user reporting a declined card transaction",
+      "input_tokens": 102,
+      "output_tokens": 36,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "my card was declined for no reason",
+      "attempt": 2
+    },
+    {
+      "verdict": "fail",
+      "reason": "the issue described is related to a technical problem with the export button, not billing",
+      "input_tokens": 100,
+      "output_tokens": 29,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "the export button does nothing",
+      "attempt": 0
+    },
+    {
+      "verdict": "fail",
+      "reason": "The export button does nothing is more related to a technical issue, possibly with the interface or functionality, which is not directly related to billing.",
+      "input_tokens": 100,
+      "output_tokens": 41,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "the export button does nothing",
+      "attempt": 1
+    },
+    {
+      "verdict": "fail",
+      "reason": "export button is unrelated to billing",
+      "input_tokens": 100,
+      "output_tokens": 19,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "the export button does nothing",
+      "attempt": 2
+    },
+    {
+      "verdict": "pass",
+      "reason": "The model output matches the expected intent of billing for the given ticket.",
+      "input_tokens": 101,
+      "output_tokens": 27,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "I want to cancel my subscription",
+      "attempt": 0
+    },
+    {
+      "verdict": "pass",
+      "reason": "model correctly identified the intent as billing for a subscription cancellation query",
+      "input_tokens": 101,
+      "output_tokens": 25,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "I want to cancel my subscription",
+      "attempt": 1
+    },
+    {
+      "verdict": "pass",
+      "reason": "Model output matches expected intent",
+      "input_tokens": 101,
+      "output_tokens": 18,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "I want to cancel my subscription",
+      "attempt": 2
+    },
+    {
+      "verdict": "pass",
+      "reason": "the model correctly identified the intent as 'billing' when the user reported an issue with totals not adding up",
+      "input_tokens": 101,
+      "output_tokens": 34,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "the totals do not add up",
+      "attempt": 0
+    },
+    {
+      "verdict": "pass",
+      "reason": "Model output matches expected intent",
+      "input_tokens": 101,
+      "output_tokens": 18,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "the totals do not add up",
+      "attempt": 1
+    },
+    {
+      "verdict": "pass",
+      "reason": "the model correctly identified the intent as 'billing' which matches the expected intent",
+      "input_tokens": 101,
+      "output_tokens": 28,
+      "model": "llama-3.3-70b-versatile",
+      "ticket": "the totals do not add up",
+      "attempt": 2
+    }
+  ]
+}

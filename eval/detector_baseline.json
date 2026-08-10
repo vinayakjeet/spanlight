@@ -1,0 +1,23 @@
+{
+  "sessions": 500,
+  "ceiling_usd": 5e-05,
+  "fidelity": 1.0,
+  "agreement": {
+    "loop": {
+      "fired": 0,
+      "precision": null,
+      "recall": null
+    },
+    "cost_ceiling": {
+      "fired": 500,
+      "precision": 0.0,
+      "recall": null
+    },
+    "silent_tool_failure": {
+      "fired": 0,
+      "precision": null,
+      "recall": 0.0
+    }
+  },
+  "total_cost_equivalent": 0.04079107
+}

@@ -15,15 +15,15 @@ from spanlight.attributes import (
     DETECTIONS_TOTAL,
     EXPORT_FAILURES_TOTAL,
     METRIC_LABELS,
+    SESSION_COST_USD,
     SESSION_ID,
+    TOKEN_USAGE,
 )
 
 SPEC = pathlib.Path(__file__).resolve().parents[2] / "SPEC.md"
 METRICS_HEADER = "| Metric | Type | Labels |"
 
-# The two that exist. The other two in METRIC_LABELS are declared for M6, and
-# `test_every_declared_metric_is_in_the_spec_table` keeps all four honest.
-IMPLEMENTED = {DETECTIONS_TOTAL, EXPORT_FAILURES_TOTAL}
+IMPLEMENTED = {DETECTIONS_TOTAL, EXPORT_FAILURES_TOTAL, SESSION_COST_USD, TOKEN_USAGE}
 
 
 def _spec_metric_labels() -> dict[str, frozenset[str]]:
@@ -54,6 +54,14 @@ def recorded(monkeypatch: pytest.MonkeyPatch) -> InMemoryMetricReader:
         metrics_module,
         "_export_failures",
         lambda: meter.create_counter(EXPORT_FAILURES_TOTAL),
+    )
+    monkeypatch.setattr(
+        metrics_module,
+        "_session_cost",
+        lambda: meter.create_histogram(SESSION_COST_USD),
+    )
+    monkeypatch.setattr(
+        metrics_module, "_token_usage", lambda: meter.create_histogram(TOKEN_USAGE)
     )
     return reader
 
@@ -86,6 +94,13 @@ def _emit_everything(spans, reader: InMemoryMetricReader) -> dict[str, set[str]]
         for _ in range(3):
             with spanlight.tool_span("search", args={"q": "pm-kisan"}):
                 pass
+        # Priced, or `cost_usd_equivalent` is None and the session histogram
+        # records nothing, which would leave this sweep checking three metrics
+        # while claiming four.
+        with spanlight.model_span(provider="groq"):
+            spanlight.record_usage(
+                tokens_in=412, tokens_out=88, cost_usd=0.0, provider="groq"
+            )
 
     CountedExporter(Rejects()).export([])
     return _emitted(reader)

@@ -1,0 +1,100 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_TEMPO",
+      "label": "Tempo",
+      "description": "Grafana Cloud traces. Everything on this dashboard is per session, which is a trace-shaped question: a metric label per session would create one time series per run and exhaust the free tier's active-series limit within days.",
+      "type": "datasource",
+      "pluginId": "tempo"
+    }
+  ],
+  "title": "Spanlight session",
+  "uid": "spanlight-session",
+  "tags": ["spanlight"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "editable": true,
+  "time": { "from": "now-24h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "session_id",
+        "label": "Session id",
+        "description": "Paste the id returned by spanlight.session().",
+        "type": "textbox",
+        "query": "",
+        "current": { "text": "", "value": "" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Steps in this session",
+      "description": "Every span carrying the id, in order. The session span encloses the rest, and the gap between its duration and the sum of its children is time the run spent not working: queueing for a slot, or waiting on something nobody instrumented.",
+      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "gridPos": { "h": 11, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceql",
+          "query": "{ span.spanlight.session.id = \"$session_id\" }",
+          "tableType": "spans",
+          "limit": 200
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "Detections",
+      "description": "Empty is not the same as healthy. Two of the three detectors need tool spans to reason about, so on a workload that emits none this panel is empty by construction. study/coverage.md says which detectors can fire on which shape of workload.",
+      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 11 },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceql",
+          "query": "{ span.spanlight.session.id = \"$session_id\" && span.spanlight.detection != nil }",
+          "tableType": "spans",
+          "limit": 50
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Model calls, tokens and cost",
+      "description": "spanlight.cost_usd is what was actually spent, which on a free tier is 0.0 and true. spanlight.cost_usd_equivalent is what the same tokens would have cost at published list prices. They are separate names because a counterfactual presented as spend is a lie waiting to be quoted.",
+      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 11 },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceql",
+          "query": "{ span.spanlight.session.id = \"$session_id\" && span.gen_ai.system != nil } | select(span.gen_ai.system, span.gen_ai.response.model, span.gen_ai.usage.input_tokens, span.gen_ai.usage.output_tokens, span.spanlight.cost_usd_equivalent)",
+          "tableType": "spans",
+          "limit": 100
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Failed steps",
+      "description": "error.type is the exception class name. The message is deliberately absent: it carries user data and gives the attribute unbounded cardinality. Open the trace to see where in the run it happened.",
+      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 19 },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceql",
+          "query": "{ span.spanlight.session.id = \"$session_id\" && span.error.type != nil } | select(span.error.type)",
+          "tableType": "spans",
+          "limit": 50
+        }
+      ]
+    }
+  ]
+}

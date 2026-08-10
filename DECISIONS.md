@@ -506,6 +506,175 @@ And `session()` had no way to be named, so a gate run produced a hundred spans a
 called `session`. Fixed by adding `name`, which no amount of reasoning about the
 API had suggested.
 
+## 2026-08-09: Where the SPEC's ten assumptions landed
+
+**Context:** the assumptions were written before the build and three of them
+turned out to be wrong in ways that changed the plan. A reader deciding whether
+to trust any of this needs to know which held, and the entries below are spread
+across four months of this file. This is the index, not a substitute for them.
+
+**A1, Tollgate does not exist yet.** Held. The chassis `llm/client.py` is
+instrumented, so Tollgate is traced from its first commit.
+
+**A2, detectors run in-process.** Held, and sharpened: they run inside the span
+helper rather than in a `SpanProcessor`, because `on_end` hands out a
+`ReadableSpan` with no `set_attribute`, which makes the SPEC requirement that a
+detection lands on the offending span unreachable from there.
+
+**A3, distribution is a git dependency.** Held. The chassis convention is broken
+here on purpose and the CI job installs from the git URL to prove it.
+
+**A4, head sampling per session.** Half wrong. Sessions are sampled whole, but
+"sessions carrying a detection bypass the decision" is not implemented and cannot
+be: a head sampler decides before a detection can exist. Recorded 2026-08-07.
+A second consequence surfaced only this week, when a sampled-out session turned
+out to crash the host outright.
+
+**A5, a Grafana Cloud free account may not exist.** Held, and it was the one hard
+external dependency. Two inherited bugs meant the chassis had never successfully
+exported a span, and neither was visible from inside the process.
+
+**A6, the proof artifact prefers a genuine failure.** Open, and looking unlikely.
+Groq did not fail once in 46 minutes across 500 sessions, so the fallback the
+assumption allows, publishing an induced failure and labelling it induced, is
+now the probable outcome rather than the contingency.
+
+**A7, thresholds are measured before they are fixed.** Held for the loop and
+silent-failure rules. Not held for the cost ceiling, and deliberately: it has no
+default at all, because a ceiling is only meaningful against a known workload and
+any number invented here would be quoted later as one somebody measured.
+
+**A8, no Docker on this machine.** Held. Every test runs in-process or as a
+subprocess, and the collector stub is a Python HTTP server.
+
+**A9, detector correctness is proven end to end, twice.** Held, and it earned its
+place twice over. The two-run requirement found that two of three detectors
+cannot fire on ShipGate at all, which rescoped the entire field study. The same
+assumption is why `eval/detector_gate.py` replays the corpus rather than reading
+it.
+
+**A10, the field study covers one system.** Held, and it is still the riskiest
+assumption in the plan. It leads `study/threats.md` rather than closing it.
+
+**Consequences:** the two that failed, A4's detection override and A6's genuine
+failure, both failed in the same direction. Each assumed a nicer outcome than the
+mechanism allows, and in both cases the mechanism was knowable in advance and
+nobody checked. The ones that held were the ones stated as constraints rather
+than as hopes.
+
+## 2026-08-09: Detections are not counted for sessions the sampler dropped
+
+**Context:** a sampled-out span is a `NonRecordingSpan`, which has no
+`attributes` at all. Every detector reads them, so any host running below
+`sample_rate=1.0` raised `AttributeError` out of instrumentation on its first
+dropped session. Found while adding the session-cost metric, and confirmed
+against unmodified `main` before writing a line of fix, because a new failure
+that appears with a new line usually belongs to that line and here it did not.
+
+**Decision:** the registry returns early on a span that is not recording, so no
+detector runs on a dropped session.
+
+**Alternatives considered:** making each detector defensive with a `getattr`.
+That keeps detectors running on dropped sessions, which sounds harmless until
+you notice what still works on a `NonRecordingSpan`: the attribute goes nowhere,
+the event goes nowhere, and only `count_detection` survives. The result would be
+a counter incrementing for a session with no trace to open, which is a worse
+answer than not counting it.
+
+**Consequences:** `spanlight_detections_total` is now sampled at the same rate as
+the traces. At the default of 1.0 that changes nothing. Below it, the M6.6 alert
+sees the same fraction of detections as Tempo sees of sessions, and an operator
+lowering the rate to save quota is also lowering how often a silent failure
+pages anyone. That is stated in the alert file rather than left to be discovered.
+
+The interesting part is why two green suites both missed it. `test_sampler.py`
+samples and registers no detectors; the detector tests register the real
+detectors and never sample. Neither file is wrong on its own, and the bug lives
+only in the pair. Worth asking of any suite: which two features have no test in
+common?
+
+## 2026-08-09: Session cost is summed once, by the framework, not by the detector
+
+**Context:** M6.4 needs `spanlight_session_cost_usd`, which is a per-session
+total. The cost-ceiling detector already kept exactly that running total in its
+own state, and the obvious move was to sum it a second time for the metric.
+
+**Decision:** the framework accumulates the total on every span end, under one
+key, and the detector reads it. The cost ceiling has no default, so the common
+deployment registers no cost detector at all, and a metric that depended on one
+would report every session as free.
+
+**Alternatives considered:** a second sum inside `record_usage`. Two independent
+additions over the same spans is a second source of truth, and the one that
+drifts is whichever nobody wrote a test for.
+
+**Consequences:** the detector still gates on the span carrying a cost, so a
+detection lands on the call that crossed the line rather than on whatever step
+ended next. That equivalence is not argued, it is measured: replaying the 500
+session corpus through the changed code reproduced the recorded detections
+exactly, which is what `eval/detector_gate.py` exists to check.
+
+## 2026-08-09: The cost histogram declares no unit
+
+**Context:** the OTLP to Prometheus translation appends a metric's unit to its
+name when it is not already a suffix. `spanlight_session_cost_usd` with
+`unit="USD"` risks arriving as `spanlight_session_cost_usd_usd`.
+
+**Decision:** no unit on that histogram, and a comment saying why. `{token}` on
+the token histogram stays, since annotation units in braces are dropped by the
+same translation.
+
+**Consequences:** the display unit lives on the dashboard panel, which is where a
+reader changes it anyway. The failure this avoids is the quiet one: every panel
+would load, render, and draw nothing, and a fleet with no cost showing reads as a
+fleet that spent nothing.
+
+## 2026-08-09: The detector gate replays the corpus rather than reading it
+
+**Context:** M6.7 wants ShipGate's consumer contract applied to the labelled
+corpus. The corpus already records what each detector fired, so the cheap gate
+compares those recorded detections against a baseline.
+
+**Decision:** rebuild every session through the real API and observe what fires
+today. A gate whose inputs are frozen passes forever, which is precisely how
+ShipGate's own gate stayed green through two bugs and twenty-seven tests.
+
+**Alternatives considered:** importing ShipGate and using its runner and gate
+directly. Its gate resolves baselines from a database, so this repo's CI would
+fail whenever a sibling repo's main branch broke. The contract worth reusing is
+the shape (fixed dataset, deterministic runner, checked-in baseline, any drop
+blocks), not the import.
+
+**Consequences:** the gate blocks in both directions, since a detector that
+starts firing more is the regression that actually happens to a project like
+this. And it prints which numbers it cannot protect: `cost_ceiling` precision and
+`silent_tool_failure` recall both sit at zero, and a rule that blocks on a drop
+cannot block a number already at its floor.
+
+## 2026-08-09: The study's labels are derived by rule, not by hand
+
+**Context:** the pre-registered method was a human labelling 100 sessions blind.
+Reading three traces found that 35.8% of the corpus is class A7, a verdict
+produced and wrong, and that nothing in a span distinguishes one from a correct
+verdict. A blind labeller reading traces honestly would call all 179 of them A1.
+
+**Decision:** `study/derive_labels.py` assigns a class to all 500 sessions by
+stated rule. The human pass is kept, with a smaller and better-defined job:
+measuring how far a person reading a blinded trace lands from what happened.
+
+**Alternatives considered:** labelling as pre-registered anyway. It would have
+published what a trace can show as though it were what happened, which is the
+error the study exists to warn about, committed by the study itself.
+
+**Consequences:** a deviation from pre-registration, recorded in
+`study/threats.md` section 8 with what protects it and what does not. The rules
+were written after the corpus existed, so they are not pre-registered; they were
+never written against a detector's output, which is the property pre-registration
+was protecting. The label ordering was my choice after seeing the data, and it
+moves a number: A7 outranks A4, which is why A4 has no members despite four
+sessions clearing the cost fence. Both files print that overlap, because an empty
+class reads as an absent one.
+
 ## 2026-08-08: ShipGate can only exercise one of the three detectors
 
 **Context:** M5.7 asks for the real workload through the real processor chain,

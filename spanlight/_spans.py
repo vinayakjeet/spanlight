@@ -15,7 +15,8 @@ from opentelemetry import trace
 from opentelemetry.context import attach, detach
 from opentelemetry.trace import Span, Status, StatusCode
 
-from spanlight._detector_framework import SESSION, SPAN, registry
+from spanlight._detector_framework import COST_TOTAL, SESSION, SPAN, registry
+from spanlight._metrics import record_session_cost
 from spanlight._propagation import remote_context, remote_session_id
 from spanlight._session import bind, current_session_id
 from spanlight.attributes import (
@@ -173,7 +174,12 @@ def session(
                 # it here is what keeps the registry holding only sessions in
                 # flight; the LRU and TTL are the backstop for runs that never
                 # get here.
-                registry.release(resolved)
+                #
+                # The cost observation goes out here rather than on each model
+                # call, because the unit the histogram reports on is a session.
+                # Recorded even when the session failed: an expensive run that
+                # crashed is the one worth seeing in the distribution.
+                record_session_cost(registry.release(resolved).get(COST_TOTAL))
     finally:
         if token is not None:
             detach(token)

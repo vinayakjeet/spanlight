@@ -1,0 +1,58 @@
+[
+  {
+    "name": "session",
+    "status": "UNSET",
+    "duration_ms": 2.8647,
+    "attributes": {
+      "spanlight.session.id": "a13a438d37984162970aac732395e0f7",
+      "spanlight.detection": "silent_tool_failure"
+    },
+    "events": [
+      {
+        "name": "spanlight.detection",
+        "attributes": {
+          "spanlight.detection.type": "silent_tool_failure",
+          "spanlight.detection.tool.name": "lookup_scheme"
+        }
+      }
+    ]
+  },
+  {
+    "name": "tool lookup_scheme",
+    "status": "ERROR",
+    "duration_ms": 0.1123,
+    "attributes": {
+      "spanlight.tool.name": "lookup_scheme",
+      "spanlight.tool.args_fingerprint": "62ca1a2c52bfd859",
+      "spanlight.session.id": "a13a438d37984162970aac732395e0f7",
+      "error.type": "SchemeIndexUnavailable"
+    },
+    "events": []
+  },
+  {
+    "name": "retrieve demo-index",
+    "status": "UNSET",
+    "duration_ms": 0.0584,
+    "attributes": {
+      "spanlight.retrieval.index": "demo-index",
+      "spanlight.retrieval.k": 3,
+      "spanlight.session.id": "a13a438d37984162970aac732395e0f7"
+    },
+    "events": []
+  },
+  {
+    "name": "chat",
+    "status": "UNSET",
+    "duration_ms": 0.7393,
+    "attributes": {
+      "gen_ai.system": "mock",
+      "gen_ai.operation.name": "chat",
+      "spanlight.session.id": "a13a438d37984162970aac732395e0f7",
+      "gen_ai.response.model": "mock-echo",
+      "gen_ai.usage.input_tokens": 8,
+      "gen_ai.usage.output_tokens": 10,
+      "spanlight.cost_usd": 0.0
+    },
+    "events": []
+  }
+]

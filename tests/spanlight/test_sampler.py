@@ -8,6 +8,13 @@ from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
 
 import spanlight
 import spanlight._spans as spans_module
+from spanlight._detector_framework import SESSION, registry
+from spanlight._detectors import (
+    cost_ceiling_detector,
+    loop_detector,
+    silent_tool_failure_detector,
+    watch_for_silent_failure,
+)
 from spanlight.attributes import SESSION_ID
 
 STEPS_PER_SESSION = 3
@@ -56,6 +63,29 @@ def test_a_session_is_never_exported_in_half(monkeypatch: pytest.MonkeyPatch) ->
         per_session[session_id] = per_session.get(session_id, 0) + 1
 
     assert set(per_session.values()) == {STEPS_PER_SESSION}
+
+
+def test_a_dropped_session_does_not_take_the_host_with_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The two suites missed this from opposite sides. Nothing here registered a
+    detector, and nothing in the detector tests sampled, so a host running below
+    rate 1.0 raised `AttributeError` out of instrumentation on its first dropped
+    session: a sampled-out span is a `NonRecordingSpan`, which has no
+    `attributes` for a detector to read.
+
+    Registering the real default set, because a defensive detector written for
+    this test would prove only that the test's detector is safe."""
+    registry.clear_detectors()
+    registry.register(loop_detector)
+    registry.register(watch_for_silent_failure)
+    registry.register(silent_tool_failure_detector, phase=SESSION)
+    registry.register(cost_ceiling_detector(0.0))
+    try:
+        assert len(_sampled(monkeypatch, 0.0, 3)) == 0
+    finally:
+        registry.clear_detectors()
+        registry.reset()
 
 
 def test_the_rate_is_roughly_honoured(monkeypatch: pytest.MonkeyPatch) -> None:

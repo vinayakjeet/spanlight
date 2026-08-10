@@ -24,6 +24,7 @@ COST_EQUIVALENT = "spanlight.cost_usd_equivalent"
 COLD_START = "spanlight.cold_start"
 SESSION_ID = "spanlight.session.id"
 ERROR_TYPE = "error.type"
+VERDICT = "shipgate.verdict"
 
 DETECTORS = ("loop", "cost_ceiling", "silent_tool_failure")
 
@@ -149,24 +150,45 @@ def main() -> None:
         ("group", "median", "p90", "mean", "n"),
     )
 
-    warm = [
-        r["item"]["duration_ms"]
-        for r in runs.values()
-        if not r["item"]["attributes"].get(COLD_START)
-    ]
-    cold = [
-        r["item"]["duration_ms"]
-        for r in runs.values()
-        if r["item"]["attributes"].get(COLD_START)
-    ]
+    # A session span and the provider call inside it are different measurements,
+    # and reading the first as the second is how this table was wrong until
+    # study/traces.md trace 2. `execute_run` takes its concurrency semaphore
+    # inside the session span, so an item waiting its turn holds an open span
+    # while it waits. At concurrency 1 the fourth item of a batch shows a median
+    # session of 2028ms around a median model call of 523ms. Both rows below are
+    # true; only the second is attributable to a provider.
+    warm = [r for r in runs.values() if not r["item"]["attributes"].get(COLD_START)]
+    cold = [r for r in runs.values() if r["item"]["attributes"].get(COLD_START)]
+    session_ms = [r["item"]["duration_ms"] for r in warm]
+    model_ms = [c["duration_ms"] for r in warm for c in r["model_calls"]]
     table(
-        "Session latency, milliseconds (cold starts separated, SPEC A10)",
+        "Latency, milliseconds (cold starts separated, SPEC A10)",
         [
-            ("warm", *stats(warm), len(warm)),
-            ("cold start", *stats(cold), len(cold)),
+            ("session span, warm", *stats(session_ms), len(session_ms)),
+            ("model span, warm", *stats(model_ms), len(model_ms)),
+            (
+                "session span, cold start",
+                *stats([r["item"]["duration_ms"] for r in cold]),
+                len(cold),
+            ),
         ],
         ("group", "median", "p90", "mean", "n"),
     )
+    queued = [
+        (r["item"]["duration_ms"] - sum(c["duration_ms"] for c in r["model_calls"]))
+        / r["item"]["duration_ms"]
+        for r in warm
+        if r["model_calls"]
+    ]
+    if queued:
+        print(
+            f"\n  share of the session span spent outside the model call: "
+            f"median {statistics.median(queued):.1%}, max {max(queued):.1%}"
+        )
+        print("  Nearly all of it is the concurrency semaphore. The uncontaminated")
+        print("  number was in the corpus the whole time as shipgate.latency_ms,")
+        print("  which the runner measures inside the semaphore and which tracks")
+        print("  the model span to within 1.2ms across all 500 sessions.")
 
     errors = Counter(
         r["item"]["attributes"].get(ERROR_TYPE, "none") for r in runs.values()
@@ -182,8 +204,13 @@ def main() -> None:
     # place to see it, which is a statement about where you wrap rather than
     # about tracing.
     multi_span = sum(1 for r in runs.values() if len(r["model_calls"]) > 1)
-    slow = [d for d in warm if d > 2 * statistics.median(warm)] if warm else []
-    low, high = wilson(len(slow), len(warm) or 1)
+    # On model spans, not session spans. Against session spans this counted 19,
+    # and every one of them was an item that had waited its turn in the batch
+    # rather than a call that ran long.
+    slow = (
+        [d for d in model_ms if d > 2 * statistics.median(model_ms)] if model_ms else []
+    )
+    low, high = wilson(len(slow), len(model_ms) or 1)
     table(
         "Failure shape",
         [
@@ -199,12 +226,16 @@ def main() -> None:
     print("    ChatClient.complete(), and the judge wraps complete() in one span,")
     print("    so every attempt hides under a single span that merely took longer.")
     print(
-        f"    sessions slower than 2x median: {len(slow)}/{len(warm)}, "
+        f"    model calls slower than 2x median: {len(slow)}/{len(model_ms)}, "
         f"95% CI {low:.1%} to {high:.1%}"
     )
     print("    Latency is the only remaining signal, and it cannot separate a")
     print("    retry from a slow provider. To see retries you have to instrument")
     print("    inside the retry loop, not around the call that contains it.")
+    print("    A retried call carries a failed attempt plus a wait drawn from")
+    print("    U(0, 2s), so most retries would clear 2x the median. None did,")
+    print("    which is consistent with zero provider failures rather than proof")
+    print("    of them.")
 
     # The limitation that governs how much of the taxonomy this corpus can
     # support. Printed rather than left for a reader to infer from a table of
@@ -215,11 +246,34 @@ def main() -> None:
         print("\n  LIMITATION: every session in this corpus succeeded.")
         print(f"    {total}/{total} clean, zero provider errors, zero malformed")
         print("    replies. Groq did not fail once in 46 minutes.")
-        print("    Taxonomy classes A2, A3, A6 and A7 have no instances, so this")
-        print("    corpus cannot measure how this workload fails. It can only")
-        print("    measure what it costs and how long it takes when nothing goes")
-        print("    wrong. Any failure-rate claim from this data would be a claim")
-        print("    about a 46-minute window on one provider, not about agents.")
+        print("    Taxonomy classes A2, A3 and A6 have no instances, so this")
+        print("    corpus cannot measure how this workload fails at the provider.")
+        print("    Any failure-rate claim from this data would be a claim about a")
+        print("    46-minute window on one provider, not about agents.")
+
+    # A7, silently wrong, and it is the one class this corpus has in quantity.
+    # Every item was labelled `billing` and the stub target answers `billing`, so
+    # expected and output are the same string in all 500 sessions and a `fail`
+    # verdict is a wrong score under the harness's own contract. Until M7.7 this
+    # block claimed A7 had no instances too, which was the same mistake the
+    # harness made: reading a green session as a correct one.
+    wrong = sum(
+        1
+        for r in runs.values()
+        for c in r["model_calls"]
+        if c["attributes"].get(VERDICT) == "fail"
+    )
+    print(f"\n  Class A7, silently wrong: {wrong}/{total} sessions, {wrong / total:.1%}")
+    print("    Quoted without a confidence interval on purpose. The 500 sessions")
+    print("    draw on eight tickets whose verdicts are deterministic, so they are")
+    print("    not 500 independent trials and a Wilson interval over them would")
+    print("    claim a precision the design cannot support. The quantity being")
+    print("    estimated is three tickets out of eight.")
+    print("    The judge was right every time and the dataset labels were wrong on")
+    print("    those three, confirmed in study/replay_verdicts.json.")
+    print("    Prediction 4 holds: no detector fires on any of these, at any")
+    print("    setting, because whether an answer was correct is not a property")
+    print("    of the call that produced it.")
 
     fired_share = sum(
         1 for r in runs.values() if "cost_ceiling" in r["detections"]

@@ -47,6 +47,19 @@ ITEMS_PER_RUN = 4
 # about the threshold rather than about the workload.
 CEILING_USD = 0.00005
 
+# Module scope so `study/replay_verdicts.py` judges the same eight tickets rather
+# than a copy that can drift from them.
+PROMPTS = [
+    "I was charged twice this month",
+    "the app crashes on launch",
+    "refund my last invoice",
+    "cannot log in after the update",
+    "my card was declined for no reason",
+    "the export button does nothing",
+    "I want to cancel my subscription",
+    "the totals do not add up",
+]
+
 
 class JsonlSink(SpanProcessor):
     """Every span, flattened, one per line.
@@ -123,17 +136,6 @@ def main() -> None:
 
     from llm import ChatClient
 
-    prompts = [
-        "I was charged twice this month",
-        "the app crashes on launch",
-        "refund my last invoice",
-        "cannot log in after the update",
-        "my card was declined for no reason",
-        "the export button does nothing",
-        "I want to cancel my subscription",
-        "the totals do not add up",
-    ]
-
     # Never the .env default. ShipGate ships LLM_PROVIDER=mock for its test
     # suite, and a corpus collected against a mock is a corpus of my own
     # scripted replies: twelve sessions were collected that way before this
@@ -149,7 +151,7 @@ def main() -> None:
     while done < target:
         # Varied inputs across runs, so the corpus is not one prompt repeated and
         # the cost distribution has something to be a distribution of.
-        chosen = random.sample(prompts, ITEMS_PER_RUN)
+        chosen = random.sample(PROMPTS, ITEMS_PER_RUN)
         items = [
             DatasetItem(
                 id=f"s{done + n}",

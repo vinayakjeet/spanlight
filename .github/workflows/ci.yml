@@ -25,6 +25,13 @@ jobs:
       - name: Test (pytest)
         run: uv run pytest
 
+      # Replays the field corpus through the real detector chain and blocks on
+      # any drop against the recorded baseline. Separate from the suite so a
+      # detector regression reads as one in the job list, rather than as a test
+      # failure somebody scrolls past.
+      - name: Detector gate
+        run: PYTHONPATH=. uv run python eval/detector_gate.py
+
   # Proves the three-line adoption claim from the outside. The suite above runs
   # against the working tree, where `spanlight/` is importable whether or not it
   # is a package at all, so it cannot catch a file missing from the wheel or a

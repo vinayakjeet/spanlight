@@ -33,7 +33,37 @@ else would have reported.
 
 The detectors observe. They never cancel a run or cap spend.
 
+Here is one, end to end. A tool failed, the agent carried on, and the caller got
+a normal answer:
+
+```
+session                    +   0.0ms   2.9ms  UNSET  DETECTION=silent_tool_failure
+  tool lookup_scheme       +   0.4ms   0.1ms  ERROR  error.type=SchemeIndexUnavailable
+  retrieve demo-index      +   0.7ms   0.1ms  UNSET
+  chat                     +   1.1ms   0.7ms  UNSET
+```
+
+The same request, as everything else recorded it:
+
+```
+{"event": "llm.call",     "level": "info", "provider": "mock", "tokens_out": 10}
+{"event": "http.request", "level": "info", "status_code": 200, "latency_ms": 13.1}
+```
+
+HTTP 200. No error field. Nothing for a healthcheck to go red on, and nothing
+for a log alert watching `level=error` to catch. The full artifact, including
+what is induced about it and what is not, is in
+[docs/proof/artifact.md](docs/proof/artifact.md) and regenerates with
+`uv run python eval/proof_artifact.py`.
+
 ## Architecture
+
+![Spanlight data flow](docs/architecture.svg)
+
+The ASCII below is the same flow in the shape a terminal can show. The diagram
+carries three things it cannot: where the sampler sits, that a dropped session
+is never seen by a detector, and that the study corpus is written to disk rather
+than read back out of Tempo.
 
 ```
 your agent

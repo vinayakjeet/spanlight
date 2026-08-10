@@ -10,7 +10,18 @@ from opentelemetry.trace import Span
 
 from spanlight._metrics import count_detection
 from spanlight._session import current_session_id
-from spanlight.attributes import DETECTION, DETECTION_EVENT, DETECTION_TYPE
+from spanlight.attributes import (
+    COST_USD_EQUIVALENT,
+    DETECTION,
+    DETECTION_EVENT,
+    DETECTION_TYPE,
+)
+
+# Where a session's running cost lives. One key, written in one place, read by
+# the cost detector and by the session-cost histogram. Two independent sums of
+# the same spans would be a second source of truth, and the one that drifted
+# would be whichever nobody had a test for.
+COST_TOTAL = "cost_usd_equivalent"
 
 
 @dataclass(frozen=True)
@@ -91,8 +102,15 @@ class DetectorRegistry:
         self._evict(keep=session_id)
         return entry[1]
 
-    def release(self, session_id: str) -> None:
-        self._state.pop(session_id, None)
+    def release(self, session_id: str) -> dict:
+        """Drop a finished session's scratch space and hand it back.
+
+        Returned rather than discarded so the caller can read the session's
+        totals on the way out. Reading them through `state_for` instead would
+        recreate the entry that was just released.
+        """
+        _, state = self._state.pop(session_id, (0.0, {}))
+        return state
 
     def _evict(self, keep: str | None = None) -> None:
         """`keep` is never evicted. Without it a TTL short enough to matter can
@@ -111,12 +129,37 @@ class DetectorRegistry:
             del self._state[oldest]
 
     def run(self, span: Span, phase: str = SPAN) -> None:
-        detectors = self.detectors[phase]
+        # A sampled-out session hands back `NonRecordingSpan`, which has no
+        # `attributes` at all, so every detector that reads them raises inside
+        # the `finally` that calls this and takes the host's request with it.
+        # Any host running below `sample_rate=1.0` crashed on its first dropped
+        # session, and the sampler tests missed it because they register no
+        # detectors while the detector tests never sample.
+        #
+        # Skipped rather than made defensive, because nothing a detector does to
+        # a non-recording span survives: the attribute and the event both go
+        # nowhere. The consequence is that detections inside dropped sessions are
+        # not counted either, so `spanlight_detections_total` is sampled at the
+        # same rate as the traces. At the default of 1.0 that is no consequence
+        # at all, and below it the alert in M6.6 sees a fraction of what happens.
         session_id = current_session_id()
-        if session_id is None or not detectors:
+        if session_id is None or not span.is_recording():
             return
 
+        # Accumulated before the early return below, because the session-cost
+        # histogram is not a detector and must not depend on one being
+        # registered. The cost ceiling has no default, so the common deployment
+        # has no cost detector at all and would otherwise report every session as
+        # free.
         state = self.state_for(session_id)
+        equivalent = (span.attributes or {}).get(COST_USD_EQUIVALENT)
+        if equivalent:
+            state[COST_TOTAL] = state.get(COST_TOTAL, 0.0) + equivalent
+
+        detectors = self.detectors[phase]
+        if not detectors:
+            return
+
         fired = state.setdefault("fired", set())
         for detector in detectors:
             detection = detector(state, span)

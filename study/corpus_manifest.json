@@ -1,0 +1,8 @@
+{
+  "sessions": 500,
+  "provider": "groq",
+  "ceiling_usd": 5e-05,
+  "salt_set": true,
+  "collected_finished": "2026-08-09T11:50:36",
+  "taxonomy_sha256": "1a52167bc81b3636af74a584242b702d0c5a3719ca5ade4956203556c8bc0683"
+}

@@ -4,7 +4,13 @@ import functools
 
 from opentelemetry import metrics
 
-from spanlight.attributes import DETECTIONS_TOTAL, EXPORT_FAILURES_TOTAL, TRACER_NAME
+from spanlight.attributes import (
+    DETECTIONS_TOTAL,
+    EXPORT_FAILURES_TOTAL,
+    SESSION_COST_USD,
+    TOKEN_USAGE,
+    TRACER_NAME,
+)
 
 _service = "unknown"
 
@@ -47,6 +53,59 @@ def _export_failures() -> metrics.Counter:
     return metrics.get_meter(TRACER_NAME).create_counter(
         EXPORT_FAILURES_TOTAL,
         description="Span exports that did not land, by reason.",
+    )
+
+
+@functools.cache
+def _session_cost() -> metrics.Histogram:
+    return metrics.get_meter(TRACER_NAME).create_histogram(
+        SESSION_COST_USD,
+        # Deliberately no unit. The OTLP to Prometheus translation appends the
+        # unit to the metric name when it is not already a suffix, and this name
+        # ends in `_usd` already, so declaring `USD` risks arriving as
+        # `spanlight_session_cost_usd_usd` and silently emptying every panel that
+        # queries it. `{token}` on the counter below is safe: annotation units in
+        # braces are dropped by that translation. The display unit belongs on the
+        # panel, which is where the dashboards set it.
+        description="Counterfactual cost of one session at published list prices.",
+    )
+
+
+def record_session_cost(usd_equivalent: float | None) -> None:
+    """One observation per finished session, and none for a session that spent
+    nothing.
+
+    The same number is already a span attribute, deliberately. The attribute
+    answers which session cost the most last Tuesday, which needs the identity of
+    a run and so cannot be a metric label without a time series per session. The
+    histogram answers what a session costs across a fleet, which needs
+    aggregation the trace store cannot do cheaply.
+
+    Sessions with no priced model call are skipped rather than recorded as zero.
+    A session that opened and closed without calling anything is not a cheap
+    session, and counting it as one pulls every quantile toward zero.
+    """
+    if not usd_equivalent:
+        return
+    _session_cost().record(usd_equivalent, {"service": _service})
+
+
+@functools.cache
+def _token_usage() -> metrics.Histogram:
+    return metrics.get_meter(TRACER_NAME).create_histogram(
+        TOKEN_USAGE,
+        unit="{token}",
+        description="Tokens per model call, split by direction.",
+    )
+
+
+def record_token_usage(system: str, direction: str, tokens: int | None) -> None:
+    """Input and output are recorded separately because they are priced
+    separately, so a single total cannot be turned back into a cost."""
+    if tokens is None:
+        return
+    _token_usage().record(
+        tokens, {"gen_ai.system": system, "type": direction, "service": _service}
     )
 
 

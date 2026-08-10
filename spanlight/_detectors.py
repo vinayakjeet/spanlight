@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 from opentelemetry.trace import Span, StatusCode
 
-from spanlight._detector_framework import Detection
+from spanlight._detector_framework import COST_TOTAL, Detection
 from spanlight.attributes import (
     COST_USD_EQUIVALENT,
     DETECTION_COST_CEILING_USD,
@@ -83,12 +83,14 @@ def cost_ceiling_detector(ceiling_usd: float) -> Callable[[dict, Span], str | No
     """
 
     def detect(state: dict, span: Span) -> Detection | None:
-        equivalent = (span.attributes or {}).get(COST_USD_EQUIVALENT)
-        if not equivalent:
+        # The running total is kept by the framework, which sums it whether or
+        # not this detector is registered. Still gated on this span carrying a
+        # cost, so the detection lands on the call that crossed the line rather
+        # than on whatever step happened to end next.
+        if not (span.attributes or {}).get(COST_USD_EQUIVALENT):
             return None
 
-        total = state.get("cost_usd_equivalent", 0.0) + equivalent
-        state["cost_usd_equivalent"] = total
+        total = state.get(COST_TOTAL, 0.0)
         if total <= ceiling_usd:
             return None
 
