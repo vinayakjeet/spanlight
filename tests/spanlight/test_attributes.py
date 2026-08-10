@@ -4,7 +4,7 @@ import pathlib
 
 from spanlight.attributes import CONTRACT, EVENT_CONTRACT
 
-SPEC = pathlib.Path(__file__).resolve().parents[2] / "SPEC.md"
+SPEC = pathlib.Path(__file__).resolve().parents[2] / "docs" / "CONTRACT.md"
 HEADER = "| Attribute | Type | Example | On |"
 EVENT_HEADER = "| Event attribute | Type | Example | On |"
 

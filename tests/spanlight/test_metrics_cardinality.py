@@ -20,7 +20,7 @@ from spanlight.attributes import (
     TOKEN_USAGE,
 )
 
-SPEC = pathlib.Path(__file__).resolve().parents[2] / "SPEC.md"
+SPEC = pathlib.Path(__file__).resolve().parents[2] / "docs" / "CONTRACT.md"
 METRICS_HEADER = "| Metric | Type | Labels |"
 
 IMPLEMENTED = {DETECTIONS_TOTAL, EXPORT_FAILURES_TOTAL, SESSION_COST_USD, TOKEN_USAGE}

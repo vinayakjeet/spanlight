@@ -42,8 +42,11 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
+      # Pinned, because the runner's system Python is 3.12 and this package
+      # requires 3.13. Without it uv builds the venv on whatever it finds and
+      # the install fails on a resolver error that reads like a packaging bug.
       - name: Install Spanlight as a git dependency
-        run: uv venv && uv pip install "git+https://github.com/${{ github.repository }}@${{ github.sha }}"
+        run: uv venv --python 3.13 && uv pip install "git+https://github.com/${{ github.repository }}@${{ github.sha }}"
 
       - name: Adopt it
         run: |
