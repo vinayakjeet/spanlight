@@ -1,6 +1,6 @@
 """What adopting Spanlight actually costs, in lines, per call site.
 
-    PYTHONPATH=. uv run python bench/adoption_diff.py
+    uv run python bench/adoption_diff.py
 
 The README claims three-line adoption. That is the kind of claim a project makes
 about itself and never checks, so this counts it.

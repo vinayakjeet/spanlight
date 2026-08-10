@@ -1,7 +1,12 @@
 """Send enough traffic at Grafana to tell a working dashboard from a broken one.
 
-    set -a && . ./.env && set +a
-    PYTHONPATH=. uv run python eval/generate_traffic.py 60
+    uv run python eval/generate_traffic.py 120
+
+Reads `.env` itself, and needs no `PYTHONPATH`. Both of those were once the
+caller's job, expressed as a line of bash that fails silently on cmd.exe: `set -a`
+reports "Environment variable -a not defined" and carries on, so the script then
+ran with no endpoint configured and sent its traffic nowhere. A setup step that
+can half-succeed is a setup step this script should be doing itself.
 
 **Synthetic, and never to be confused with the field corpus.** `study/corpus.jsonl`
 is 500 real sessions against a real provider and it is what the study reports on.
@@ -53,6 +58,27 @@ class Tally(SpanProcessor):
         kind = (span.attributes or {}).get(DETECTION)
         if kind:
             self.fired[kind] = self.fired.get(kind, 0) + 1
+
+ENV_FILE = pathlib.Path(__file__).resolve().parents[1] / ".env"
+
+
+def load_env() -> None:
+    """Read `.env` into the process, without overwriting what is already set.
+
+    Deliberately not `python-dotenv`: this is eight lines and adding a dependency
+    to a script that exists to verify dashboards is the wrong trade. Values are
+    taken verbatim, including the percent-encoded Grafana auth header, which
+    `spanlight.init` decodes.
+    """
+    if not ENV_FILE.exists():
+        return
+    for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
 
 SERVICE = os.environ.get("TRAFFIC_SERVICE", "spanlight-demo-agent")
 
@@ -147,14 +173,16 @@ SHAPES = (
 
 
 def main() -> None:
-    count = int(sys.argv[1]) if len(sys.argv) > 1 else 60
+    count = int(sys.argv[1]) if len(sys.argv) > 1 else 120
 
+    load_env()
     endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
     if not endpoint:
         raise SystemExit(
-            "OTEL_EXPORTER_OTLP_ENDPOINT is not set, so this would generate traffic "
-            "and send it nowhere. Load the .env that has it."
+            f"OTEL_EXPORTER_OTLP_ENDPOINT is not set and {ENV_FILE} does not "
+            "provide it, so this would generate traffic and send it nowhere."
         )
+    print(f"exporting to {endpoint}")
 
     assert spanlight.init(SERVICE, cost_ceiling_usd=CEILING_USD), "init returned False"
 

@@ -1,4 +1,5 @@
-session                      +    0.0ms      1.2ms  UNSET  DETECTION=silent_tool_failure
-  tool lookup_scheme           +    0.2ms      0.0ms  ERROR  error.type=SchemeIndexUnavailable
-  retrieve demo-index          +    0.3ms      0.0ms  UNSET
-  chat                         +    0.5ms      0.3ms  UNSET
+session                      +    0.0ms      6.8ms  UNSET  DETECTION=silent_tool_failure
+  tool lookup_scheme           +    4.9ms      0.1ms  ERROR  error.type=SchemeIndexUnavailable
+  retrieve demo-index          +    5.1ms      0.0ms  UNSET
+  chat                         +    5.4ms      1.1ms  UNSET
+    attempt 1                    +    5.6ms      0.1ms  UNSET

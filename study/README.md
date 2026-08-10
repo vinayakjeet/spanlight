@@ -13,9 +13,9 @@ records that hash, and `sha256sum taxonomy.md` should reproduce it.
 ## Regenerating the tables
 
 ```
-PYTHONPATH=. uv run python study/analyse.py         # every table in the study
-PYTHONPATH=. uv run python study/derive_labels.py   # a class per session, by rule
-PYTHONPATH=. uv run python study/precision.py       # detector precision and recall
+uv run python study/analyse.py         # every table in the study
+uv run python study/derive_labels.py   # a class per session, by rule
+uv run python study/precision.py       # detector precision and recall
 ```
 
 `analyse.py` reads nothing but `corpus.jsonl`. It prints the coverage result
@@ -103,11 +103,19 @@ number above.
 
 ## Collecting it again
 
+PowerShell, from the ShipGate checkout, because the collector imports its runners
+and reads its provider credentials:
+
 ```
 cd <shipgate>
-set -a && . ./.env && set +a
-SPANLIGHT_FINGERPRINT_SALT=<any fixed value> python <spanlight>/study/collect.py 500
+Get-Content .env | ForEach-Object { if ($_ -match '^\s*([^#=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2].Trim()) } }
+$env:SPANLIGHT_FINGERPRINT_SALT = "<any fixed value>"
+python <spanlight>/study/collect.py 500
 ```
+
+The bash equivalent is `set -a && . ./.env && set +a`. Worth knowing that on
+cmd.exe it does not fail, it prints "Environment variable -a not defined" and
+carries on, leaving the run with no credentials and no endpoint.
 
 Appends, so a run interrupted by a rate limit or a closed laptop resumes. Paced
 at roughly 12 model calls a minute, which is deliberate: a run that hammers a

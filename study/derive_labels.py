@@ -1,6 +1,6 @@
 """Assign a taxonomy class to every session by rule, and say which rules cannot.
 
-    PYTHONPATH=. uv run python study/derive_labels.py
+    uv run python study/derive_labels.py
 
 The pre-registered plan was to hand-label a sample of 100 sessions blind. Trace 3
 broke the premise. 35.8% of this corpus is class A7, a verdict that was produced

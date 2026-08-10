@@ -1,7 +1,7 @@
 """Detector precision and recall against the derived labels.
 
-    PYTHONPATH=. uv run python study/derive_labels.py
-    PYTHONPATH=. uv run python study/precision.py
+    uv run python study/derive_labels.py
+    uv run python study/precision.py
 
 Scored against `labels_derived.jsonl`, whose rules are stated in
 `study/derive_labels.py` and applied to all 500 sessions. They were written after

@@ -1,6 +1,6 @@
 """Every table in the study, regenerated from the corpus.
 
-    PYTHONPATH=. uv run python study/analyse.py
+    uv run python study/analyse.py
 
 A script rather than a notebook, so CI can run it and a stranger can diff its
 output. BACKLOG asks for `analysis.ipynb`; a notebook whose cells were run in an

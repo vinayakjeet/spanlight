@@ -1,6 +1,6 @@
 """How often the detectors fire on sessions that were fine.
 
-    PYTHONPATH=. uv run python bench/false_positives.py
+    uv run python bench/false_positives.py
 
 A detector nobody trusts is worse than no detector, because it trains its reader
 to dismiss it. ShipGate shipped a gate threshold of 2 points against a judge

@@ -2,9 +2,9 @@
   {
     "name": "session",
     "status": "UNSET",
-    "duration_ms": 1.2478,
+    "duration_ms": 6.8371,
     "attributes": {
-      "spanlight.session.id": "eae4c117c5f846a290e9e76334c4cd55",
+      "spanlight.session.id": "b050c18cadd44faba42e1964284546a7",
       "spanlight.detection": "silent_tool_failure"
     },
     "events": [
@@ -20,11 +20,11 @@
   {
     "name": "tool lookup_scheme",
     "status": "ERROR",
-    "duration_ms": 0.0482,
+    "duration_ms": 0.1014,
     "attributes": {
       "spanlight.tool.name": "lookup_scheme",
-      "spanlight.tool.args_fingerprint": "5ac15744d1c2e8f5",
-      "spanlight.session.id": "eae4c117c5f846a290e9e76334c4cd55",
+      "spanlight.tool.args_fingerprint": "758ff295dd951f74",
+      "spanlight.session.id": "b050c18cadd44faba42e1964284546a7",
       "error.type": "SchemeIndexUnavailable"
     },
     "events": []
@@ -32,26 +32,36 @@
   {
     "name": "retrieve demo-index",
     "status": "UNSET",
-    "duration_ms": 0.0238,
+    "duration_ms": 0.0383,
     "attributes": {
       "spanlight.retrieval.index": "demo-index",
       "spanlight.retrieval.k": 3,
-      "spanlight.session.id": "eae4c117c5f846a290e9e76334c4cd55"
+      "spanlight.session.id": "b050c18cadd44faba42e1964284546a7"
     },
     "events": []
   },
   {
     "name": "chat",
     "status": "UNSET",
-    "duration_ms": 0.3315,
+    "duration_ms": 1.093,
     "attributes": {
       "gen_ai.system": "mock",
       "gen_ai.operation.name": "chat",
-      "spanlight.session.id": "eae4c117c5f846a290e9e76334c4cd55",
+      "spanlight.session.id": "b050c18cadd44faba42e1964284546a7",
       "gen_ai.response.model": "mock-echo",
       "gen_ai.usage.input_tokens": 8,
       "gen_ai.usage.output_tokens": 10,
       "spanlight.cost_usd": 0.0
+    },
+    "events": []
+  },
+  {
+    "name": "attempt 1",
+    "status": "UNSET",
+    "duration_ms": 0.0532,
+    "attributes": {
+      "spanlight.attempt.number": 1,
+      "spanlight.session.id": "b050c18cadd44faba42e1964284546a7"
     },
     "events": []
   }

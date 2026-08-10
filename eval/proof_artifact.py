@@ -1,6 +1,6 @@
 """Produce the Proof Artifact: a silent tool failure, and the green report beside it.
 
-    PYTHONPATH=. uv run python eval/proof_artifact.py
+    uv run python eval/proof_artifact.py
 
 Writes `docs/proof/`. Three pieces are called for and this script produces two of
 them, because the third is a screenshot of a Grafana alert and this machine has
@@ -272,7 +272,7 @@ span attribute and the counter that came from it.
 ## Regenerating this
 
 ```
-PYTHONPATH=. uv run python eval/proof_artifact.py
+uv run python eval/proof_artifact.py
 ```
 
 It exits non-zero and writes nothing if no detection fires. Publishing a

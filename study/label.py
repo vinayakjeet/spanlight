@@ -1,6 +1,6 @@
 """Hand-label a random sample of sessions, without seeing what the detectors said.
 
-    PYTHONPATH=. uv run python study/label.py
+    uv run python study/label.py
 
 Blind on purpose. If the labeller can see `spanlight.detection`, the labels drift
 toward agreeing with it and the precision number afterwards is measuring how

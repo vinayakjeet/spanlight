@@ -1,7 +1,7 @@
 """Block a merge that changes what the detectors do to the field corpus.
 
-    PYTHONPATH=. uv run python eval/detector_gate.py
-    PYTHONPATH=. uv run python eval/detector_gate.py --update-baseline
+    uv run python eval/detector_gate.py
+    uv run python eval/detector_gate.py --update-baseline
 
 Applies ShipGate's consumer contract: a fixed dataset, a runner with no
 run-to-run variance, a checked-in baseline, and any drop blocks. It does not

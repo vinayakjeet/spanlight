@@ -146,7 +146,7 @@ of a span means querying traces on a timer, which a free tier will not carry.
 
 ## Benchmarks
 
-Regenerate with `PYTHONPATH=. uv run python bench/overhead.py`.
+Regenerate with `uv run python bench/overhead.py`.
 
 CPython 3.13.2, Windows 11, AMD64. 20,000 calls per repeat, best of 7. Median
 microseconds per call, in-process only.
@@ -173,7 +173,7 @@ Grafana's latency and call it Spanlight's overhead.
 
 ### Detector state
 
-`PYTHONPATH=. uv run python -m pytest tests/spanlight/test_detector_state.py`
+`uv run python -m pytest tests/spanlight/test_detector_state.py`
 
 **928 bytes retained across 10,000 sessions**, 0.1 per session, nothing resident
 afterwards. Within a session, loop-detector state is unbounded by design: it has
@@ -183,7 +183,7 @@ ending.
 
 ### Adoption cost
 
-Regenerate with `PYTHONPATH=. uv run python bench/adoption_diff.py`.
+Regenerate with `uv run python bench/adoption_diff.py`.
 
 | Call site | Statements | Lines |
 |---|---|---|
@@ -229,7 +229,7 @@ Three things that adoption found, which no amount of designing in isolation had:
 
 ### False positives
 
-Regenerate with `PYTHONPATH=. uv run python bench/false_positives.py`.
+Regenerate with `uv run python bench/false_positives.py`.
 
 700 synthetic healthy sessions across seven patterns: pagination, retries,
 multi-step plans, recovery by trying a different tool, long research runs.
