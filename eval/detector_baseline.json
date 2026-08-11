@@ -2,6 +2,10 @@
   "sessions": 500,
   "ceiling_usd": 5e-05,
   "fidelity": 1.0,
+  "fixtures": {
+    "total": 8,
+    "broken": []
+  },
   "agreement": {
     "loop": {
       "fired": 0,

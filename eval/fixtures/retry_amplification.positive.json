@@ -1,0 +1,44 @@
+{
+  "name": "retry_amplification.positive",
+  "detector": "retry_amplification",
+  "expect": "fires",
+  "why": "Three calls, each burning two attempts before it lands. Six failures to do three calls of work, and no single call in it looks remarkable, which is why the rule counts a session.",
+  "steps": [
+    {
+      "kind": "model",
+      "attempts": [
+        {
+          "fails": true
+        },
+        {
+          "fails": true
+        },
+        {}
+      ]
+    },
+    {
+      "kind": "model",
+      "attempts": [
+        {
+          "fails": true
+        },
+        {
+          "fails": true
+        },
+        {}
+      ]
+    },
+    {
+      "kind": "model",
+      "attempts": [
+        {
+          "fails": true
+        },
+        {
+          "fails": true
+        },
+        {}
+      ]
+    }
+  ]
+}

@@ -15,7 +15,7 @@ frozen file against itself and pass forever: ShipGate shipped a gate that could
 not fail through two separate bugs while twenty-seven unit tests stayed green,
 and the shape of that mistake is a check whose inputs cannot move.
 
-Two things are scored, because they fail differently:
+Three things are scored, because they fail differently:
 
 - **fidelity**, whether today's code reproduces what the collecting run recorded,
   session by session. This is the one with signal. It sits at 100% and any drop
@@ -23,6 +23,11 @@ Two things are scored, because they fail differently:
 - **agreement**, precision and recall against `study/labels_derived.jsonl`. These
   are the M7 numbers. Some of them sit at a floor and cannot drop, which the
   report says out loud rather than counting as protection.
+- **fixtures**, a positive and a negative case for each of the four detectors.
+  This is what covers the three the corpus cannot: it contains no tool spans, so
+  replaying it exercises `cost_ceiling` and nothing else. Not a drop rule but a
+  required outcome, because a detector that stops firing on its own positive case
+  is broken and there is no threshold at which that is acceptable.
 """
 
 from __future__ import annotations
@@ -42,6 +47,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (  # noqa: E4
 
 import spanlight  # noqa: E402
 import spanlight._spans as spans_module  # noqa: E402
+from eval import fixture_replay as fixtures  # noqa: E402
 from spanlight._detector_framework import SESSION, registry  # noqa: E402
 from spanlight._detectors import (  # noqa: E402
     cost_ceiling_detector,
@@ -153,10 +159,14 @@ def measure() -> dict:
     was = recorded(runs)
     matched = sum(1 for session_id in was if fired.get(session_id) == was[session_id])
 
+    cases = fixtures.load()
+    broken = [problem for case in cases if (problem := fixtures.check(case))]
+
     return {
         "sessions": len(runs),
         "ceiling_usd": ceiling,
         "fidelity": round(matched / len(runs), 4),
+        "fixtures": {"total": len(cases), "broken": broken},
         "agreement": agreement(fired, labels),
         "total_cost_equivalent": round(
             sum(
@@ -178,6 +188,18 @@ def compare(current: dict, baseline: dict) -> list[str]:
     rule that watches scores fall.
     """
     failures = []
+
+    # Not compared against the baseline, unlike everything else here. A fixture
+    # states an outcome the detector is required to produce, so the only
+    # acceptable count of broken ones is zero and there is no previous value that
+    # makes a broken one alright.
+    failures.extend(current["fixtures"]["broken"])
+    if current["fixtures"]["total"] < baseline.get("fixtures", {}).get("total", 0):
+        failures.append(
+            f"fixtures went from {baseline['fixtures']['total']} to "
+            f"{current['fixtures']['total']}: deleting a case is not the same as passing it"
+        )
+
     if current["sessions"] != baseline["sessions"]:
         failures.append(
             f"corpus changed: {baseline['sessions']} sessions to {current['sessions']}"
@@ -209,6 +231,11 @@ def compare(current: dict, baseline: dict) -> list[str]:
 def report(current: dict, baseline: dict | None, failures: list[str]) -> None:
     print(f"{current['sessions']} sessions replayed at a ceiling of ${current['ceiling_usd']}")
     print(f"  fidelity against the recorded corpus: {current['fidelity']:.1%}")
+    cases = current["fixtures"]
+    passed = cases["total"] - len(cases["broken"])
+    print(f"  fixtures: {passed}/{cases['total']} behaved")
+    for problem in cases["broken"]:
+        print(f"    {problem}")
     for detector, scores in current["agreement"].items():
         def show(value: float | None) -> str:
             return "undefined" if value is None else f"{value:.1%}"
@@ -227,10 +254,10 @@ def report(current: dict, baseline: dict | None, failures: list[str]) -> None:
         if scores[metric] == 0.0
     ]
     if floored:
-        print(f"\n  Not protected by this gate, already at zero: {', '.join(floored)}.")
-        print("  A rule that blocks on a drop cannot block a metric that cannot drop.")
-        print("  Fidelity is what guards these, and it guards behaviour rather than")
-        print("  correctness.")
+        print(f"\n  Not protected by the drop rule, already at zero: {', '.join(floored)}.")
+        print("  A rule that blocks on a drop cannot block a number that cannot fall,")
+        print("  and the corpus has no tool spans, so it cannot exercise three of the")
+        print("  four detectors at all. The fixtures above are what covers them.")
 
     if baseline is None:
         print(f"\nNo baseline at {BASELINE.name}. Run with --update-baseline to record one.")

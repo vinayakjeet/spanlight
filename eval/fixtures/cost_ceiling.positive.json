@@ -1,0 +1,19 @@
+{
+  "name": "cost_ceiling.positive",
+  "detector": "cost_ceiling",
+  "expect": "fires",
+  "ceiling_usd": 0.0005,
+  "why": "Two ordinary calls whose running total crosses the ceiling. The detection has to land on the call that crossed it, not on the first expensive-looking one.",
+  "steps": [
+    {
+      "kind": "model",
+      "tokens_in": 900,
+      "tokens_out": 260
+    },
+    {
+      "kind": "model",
+      "tokens_in": 900,
+      "tokens_out": 260
+    }
+  ]
+}

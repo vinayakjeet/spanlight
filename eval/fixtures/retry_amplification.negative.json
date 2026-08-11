@@ -1,0 +1,32 @@
+{
+  "name": "retry_amplification.negative",
+  "detector": "retry_amplification",
+  "expect": "quiet",
+  "why": "Two calls that each retried twice. Four failures, and this pattern was written down as healthy before the threshold was measured, so the threshold accommodates it rather than the label being changed to justify a threshold.",
+  "steps": [
+    {
+      "kind": "model",
+      "attempts": [
+        {
+          "fails": true
+        },
+        {
+          "fails": true
+        },
+        {}
+      ]
+    },
+    {
+      "kind": "model",
+      "attempts": [
+        {
+          "fails": true
+        },
+        {
+          "fails": true
+        },
+        {}
+      ]
+    }
+  ]
+}

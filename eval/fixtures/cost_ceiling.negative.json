@@ -1,0 +1,19 @@
+{
+  "name": "cost_ceiling.negative",
+  "detector": "cost_ceiling",
+  "expect": "quiet",
+  "ceiling_usd": 0.0005,
+  "why": "The same two calls at a tenth of the tokens. The ceiling is the only thing that differs between this and the case above, which is the point: the rate is a statement about the threshold.",
+  "steps": [
+    {
+      "kind": "model",
+      "tokens_in": 90,
+      "tokens_out": 26
+    },
+    {
+      "kind": "model",
+      "tokens_in": 90,
+      "tokens_out": 26
+    }
+  ]
+}

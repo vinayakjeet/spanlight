@@ -1,0 +1,26 @@
+{
+  "name": "silent_tool_failure.negative",
+  "detector": "silent_tool_failure",
+  "expect": "quiet",
+  "why": "A tool failed and a later tool succeeded, so the run recovered and had real data to answer from. That is an agent handling a failure, not hiding one.",
+  "steps": [
+    {
+      "kind": "tool",
+      "name": "search",
+      "args": {
+        "q": "pm-kisan"
+      },
+      "fails": true
+    },
+    {
+      "kind": "tool",
+      "name": "lookup_scheme",
+      "args": {
+        "id": 42
+      }
+    },
+    {
+      "kind": "model"
+    }
+  ]
+}

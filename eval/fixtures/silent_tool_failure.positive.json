@@ -1,0 +1,24 @@
+{
+  "name": "silent_tool_failure.positive",
+  "detector": "silent_tool_failure",
+  "expect": "fires",
+  "why": "A tool raised, a model ran afterwards, and the session ended without an error status. The agent was told a tool failed and answered as though it had not.",
+  "steps": [
+    {
+      "kind": "tool",
+      "name": "lookup_scheme",
+      "args": {
+        "id": 42
+      },
+      "fails": true
+    },
+    {
+      "kind": "retrieval",
+      "name": "schemes-v3",
+      "k": 3
+    },
+    {
+      "kind": "model"
+    }
+  ]
+}

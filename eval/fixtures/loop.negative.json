@@ -1,0 +1,32 @@
+{
+  "name": "loop.negative",
+  "detector": "loop",
+  "expect": "quiet",
+  "why": "Same tool, arguments differing by one character. Walking pages or asking about different entities is correct behaviour, and a rule that cannot tell it from a loop is a rule that gets muted.",
+  "steps": [
+    {
+      "kind": "tool",
+      "name": "search",
+      "args": {
+        "q": "pm-kisan eligibility"
+      }
+    },
+    {
+      "kind": "tool",
+      "name": "search",
+      "args": {
+        "q": "pm-kisan eligibilty"
+      }
+    },
+    {
+      "kind": "tool",
+      "name": "search",
+      "args": {
+        "q": "pm-kisan eligibilities"
+      }
+    },
+    {
+      "kind": "model"
+    }
+  ]
+}

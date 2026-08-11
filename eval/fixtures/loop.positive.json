@@ -1,0 +1,32 @@
+{
+  "name": "loop.positive",
+  "detector": "loop",
+  "expect": "fires",
+  "why": "The same tool, the same arguments, three times. An agent that has stopped making progress and has not noticed.",
+  "steps": [
+    {
+      "kind": "tool",
+      "name": "search",
+      "args": {
+        "q": "pm-kisan eligibility"
+      }
+    },
+    {
+      "kind": "tool",
+      "name": "search",
+      "args": {
+        "q": "pm-kisan eligibility"
+      }
+    },
+    {
+      "kind": "tool",
+      "name": "search",
+      "args": {
+        "q": "pm-kisan eligibility"
+      }
+    },
+    {
+      "kind": "model"
+    }
+  ]
+}
