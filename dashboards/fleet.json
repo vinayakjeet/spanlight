@@ -28,11 +28,14 @@
       {
         "name": "service",
         "label": "Service",
+        "description": "Defaults to every service. The panels filter on service=~\"$service\", so a variable that resolves to nothing empties the whole dashboard, which is indistinguishable from no data having arrived.",
         "type": "query",
         "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-        "query": "label_values(spanlight_session_cost_usd_count, service)",
+        "query": "label_values(service)",
         "includeAll": true,
         "multi": true,
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" },
         "refresh": 2
       }
     ]
@@ -99,7 +102,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (reason) (increase(spanlight_export_failures_total{service=~\"$service\"}[$__range]))",
+          "expr": "sum by (reason) (increase({__name__=~\"spanlight_export_failures_total(_total)?\", service=~\"$service\"}[$__range]))",
           "legendFormat": "{{reason}}",
           "instant": true
         }
@@ -116,7 +119,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (type) (increase(spanlight_detections_total{service=~\"$service\"}[$__rate_interval]))",
+          "expr": "sum by (type) (increase({__name__=~\"spanlight_detections_total(_total)?\", service=~\"$service\"}[$__rate_interval]))",
           "legendFormat": "{{type}}"
         }
       ]

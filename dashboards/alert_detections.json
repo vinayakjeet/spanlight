@@ -24,7 +24,7 @@
         "refId": "A",
         "editorMode": "code",
         "instant": true,
-        "expr": "sum by (type, service) (increase(spanlight_detections_total[5m]))",
+        "expr": "sum by (type, service) (increase({__name__=~\"spanlight_detections_total(_total)?\"}[5m]))",
         "intervalMs": 60000,
         "maxDataPoints": 43200
       }
@@ -57,6 +57,7 @@
   ],
   "_notes": {
     "why_increase_and_not_the_raw_counter": "spanlight_detections_total only ever rises, so a rule on its value fires forever after the first detection and gets muted within a day. increase() over the evaluation window asks the question actually worth asking, which is whether anything fired recently.",
+    "why_the_name_is_a_regex": "Prometheus appends _total to a monotonic sum when translating from OTLP, and whether it skips a name already ending in _total has varied by version. Matching both spellings costs nothing. A rule that silently matches no series is a rule that never fires, which is the failure this whole project is about.",
     "why_for_is_zero": "A detection is a discrete event, not a level to be sustained. Requiring it to persist would mean a single silent failure never alerts, which is the exact failure this project exists to surface.",
     "why_group_by_type_and_service": "The two labels the counter carries. Session id is deliberately not among them: as a metric label it would create one time series per run and exhaust the free tier's active-series limit in days, so the alert says what fired and the trace says which run.",
     "sampling": "Detections inside sampled-out sessions are not counted, because a dropped span cannot carry the attribute or the event either. At the default sample_rate of 1.0 this rule sees everything; below it, it sees the same fraction as the traces.",
