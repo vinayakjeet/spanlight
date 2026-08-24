@@ -60,7 +60,7 @@ Measured by `bench/adoption_diff.py`, counting every statement that mentions
 
 | Repo | Sites | Statements | Lines | Per site |
 |---|---|---|---|---|
-| This repo | 3 | 11 | 20 | 3.7 statements, 6.7 lines |
+| This repo | 3 | 12 | 21 | 4.0 statements, 7.0 lines |
 | ShipGate | 4 | 19 | 29 | 4.8 statements, 7.2 lines |
 
 ShipGate is the honest number, because it existed before this library did and had
@@ -76,6 +76,9 @@ costs five statements, not three.
 |---|---|
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Grafana Cloud's signal-agnostic base URL, ending in `/otlp`. Spanlight appends `/v1/traces` and `/v1/metrics` itself. |
 | `OTEL_EXPORTER_OTLP_HEADERS` | `Authorization=Basic%20<token>`, percent-encoded as Grafana issues it. Spanlight decodes it. |
+| `SPANLIGHT_SAMPLE_RATE` | Optional, default 1.0. Below it, a dropped session loses its trace and its detection count together. |
+| `OTEL_SEMCONV_STABILITY_OPT_IN` | Optional. Set to `gen_ai_latest_experimental` to emit the newest development convention names; the resource records which generation produced each trace. |
+| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | Leave unset. `SPAN_ONLY` turns on prompt and completion capture into the convention's message attributes, which exports user text by design. The portfolio leaves this off everywhere. |
 | `SPANLIGHT_FINGERPRINT_SALT` | Optional. Fixes the tool-argument hash across processes. Leave it unset unless you are comparing fingerprints between runs, and never publish it. |
 
 Both endpoint and headers can be passed to `init()` instead, which is what a host

@@ -86,6 +86,12 @@ three-step run arrives as three unrelated traces that happen to share an
 attribute. There is no waterfall to read, and a session-scoped detector has
 nothing still open to mark.
 
+Adopters who run an OpenTelemetry Collector anyway get a reference pipeline in
+`collector/config.yaml`: convention normalisation for the rest of their fleet,
+a redaction allowlist held to this repo's contract, and the tail-sampling
+policy this library refuses to fake. [docs/COLLECTOR.md](docs/COLLECTOR.md) has
+the reasoning; this portfolio itself runs without one.
+
 Detectors run from inside the span helper, immediately before the span closes,
 rather than from a `SpanProcessor`. A processor's `on_end` receives a
 `ReadableSpan`, which has no `set_attribute` at all, so a detection cannot be
@@ -189,14 +195,16 @@ Regenerate with `uv run python bench/adoption_diff.py`.
 |---|---|---|
 | `app/routers/agent.py` (session, tool, retrieval) | 4 | 4 |
 | `app/main.py` (startup) | 2 | 6 |
-| `llm/client.py` (model call with full attribution) | 5 | 10 |
-| **per site** | **3.7** | **6.7** |
+| `llm/client.py` (model call with full attribution, attempts included) | 6 | 11 |
+| **per site** | **4.0** | **7.0** |
 
 The three-line snippet at the top of this README is real and it works: those
 three statements get you a trace. **It is not the whole story.** Recording tokens
 and cost costs another two statements at the model call site, which is why
 `llm/client.py` is the most expensive one here and why it would be the first
-place the claim breaks for anyone else.
+place the claim breaks for anyone else. It grew once more since this table was
+first printed: the attempt span per retry (see M9) costs its own `with`, and
+that is one statement bought for the ability to see retries at all.
 
 Both numbers are given because only one of them is stable. `record_usage(...)` is
 six physical lines as this repo formats it and one line written wide, so a line
@@ -246,8 +254,82 @@ because of patterns nobody would design a detector to flag. See What Broke.
 The corpus is synthetic, so zero means "does not fire on anything I thought of",
 not "does not fire". The real rate comes from the M7 field corpus.
 
-Not yet measured: overhead under real concurrency. The field study numbers are M7
-and do not exist yet.
+### Field study
+
+Regenerate with `PYTHONPATH=. uv run python study/analyse.py`.
+
+500 real instrumented sessions from ShipGate's eval traffic, collected against a
+real free-tier provider, taxonomy hashed before collection. The headline result
+is a coverage result:
+
+| Claim | Value | Source |
+|---|---|---|
+| Sessions where loop or silent_tool_failure fired, because the workload emits no tool spans at all | 0/500 | `study/analyse.py` |
+| Sessions producing a wrong verdict with every span green | 179/500 (35.8%) | `study/analyse.py` |
+| Detector state retained across 10,000 sessions | 928 bytes | `tests/spanlight/test_detector_state.py` |
+
+A dashboard of zeros reads as health, so the study reports what the detectors
+cannot see as prominently as what they catch: two of three rules are structurally
+silent on a batch scorer, and no rule can fire on a wrong answer, because
+correctness is not a property of the call that produced it. The corpus and its
+regeneration commands are published; see `study/README.md`.
+
+Against AI-NativeBench's three published findings
+(`PYTHONPATH=. uv run python study/against_nativebench.py`): inference dominance
+corroborates, at a median 99.9% of measured session time inside the model call;
+the cost-multiplier finding is unmeasurable here twice over, since the corpus
+contains zero failed sessions and predates attempt spans, so retries were only
+ever visible as duration; the parameter paradox has nothing to compare, the
+free tier fixed one model for all 500 sessions. Two refusals and one
+confirmation is the honest scoreline, and each refusal states what would have
+to exist to change it.
+
+### Sampling
+
+The library makes one head decision per session: `ParentBased` over
+`TraceIdRatioBased`, so a session is exported whole or dropped whole, never
+halved. The rate comes from the `sample_rate` argument, then
+`SPANLIGHT_SAMPLE_RATE`, then defaults to 1.0. The default is deliberate: a
+service that configured an endpoint and then silently drops nine tenths of its
+traces is the failure this library exists to make visible.
+
+Below 1.0, a dropped session loses both its trace and its detection count,
+because a non-recording span carries neither. That coupling is stated rather
+than fixed: an operator lowering the rate to save quota is also choosing how
+often a silent failure pages anyone.
+
+What head sampling cannot do is keep the sessions that turned out interesting,
+and the library declines to fake it by buffering spans in-process. That
+decision belongs after the fact, which is where collectors live:
+`collector/config.yaml` ships the policy this library cannot honestly run,
+keeping every session that ended ERROR or ran slow at 100% and sampling the
+routine remainder at a stated rate, alongside `genainormalizer` and a redaction
+allowlist held to the contract by test. See [docs/COLLECTOR.md](docs/COLLECTOR.md).
+
+### Tested with
+
+Nothing GenAI in the OpenTelemetry conventions is Stable, and a minor SDK bump
+can rename an attribute out from under every dashboard querying it. So: pinned
+convention revision (recorded on every trace's resource), a mapping layer that
+owns every name, and this table. Regenerate a row with
+`uv run python bench/tested_with.py`; `tests/test_tested_with.py` holds the
+newest row to `pyproject.toml`, so bumping the pin without re-testing against it
+fails CI.
+
+Milestones M0 through M7 ran before this table existed and were not re-run under
+a recorded environment; the honest entry starts now.
+
+| Date | Spanlight | Demo stack | OTel SDK | gen_ai semconv | Python | Host | Workload |
+|---|---|---|---|---|---|---|---|
+| 2026-08-24 | 0.1.0 | fastapi 0.141.1/uvicorn 0.52.1/httpx 0.28.1 | 1.44.0 | 1.29.0 | CPython 3.13.2 | Windows AMD64 | suite, demo agent |
+
+Setting `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental` moves emission
+to the newest development names (`gen_ai.system` became
+`gen_ai.provider.name` there; that rename is currently the whole difference) and
+stamps the resource value so affected traces stay identifiable. The convention
+also defines `gen_ai.conversation.id`; Spanlight deliberately does not emit it,
+because inventing an identifier when the framework has none is exactly what the
+spec says not to do.
 
 ## Technical decisions
 
@@ -275,6 +357,12 @@ needs that.
 OpenTelemetry forwards baggage untouched but would drop a custom header, and that
 break would surface as two unrelated sessions rather than as an error.
 
+**MCP requests carry the same context in `_meta`.** The protocol fixed the key
+names (`traceparent`, `tracestate`, `baggage`, unprefixed inside `params._meta`),
+so `spanlight.mcp_meta()` produces the property bag for a tool call and the far
+side joins through `session(headers=...)` unchanged. The three-service demo
+screenshot waits for Dwarpal to exist; the mechanism is tested here hop by hop.
+
 ## What a trace exports
 
 Instrumentation is a data-exfiltration path pointed at a third party by design.
@@ -283,17 +371,21 @@ Worth stating exactly what goes down it.
 Every attribute is one of three things. **Safe** means it is chosen by a
 developer, like a table name. **Hashed** means a user supplied it and only a
 salted digest leaves. **Derived** means it is a number computed from the call and
-carries no content. Nothing is opt-in yet, because nothing raw is exported at
-all.
+carries no content. One more class exists: **opt-in** content capture, which is
+off by default and off in every portfolio deployment, described below the table.
 
 | Attribute | Class | What it reveals |
 |---|---|---|
 | `gen_ai.system` | safe | Which provider, e.g. `groq` |
+| `gen_ai.provider.name` | safe | Same, under the experimental generation |
 | `gen_ai.operation.name` | safe | `chat` |
 | `gen_ai.request.model` | safe | Model asked for |
 | `gen_ai.response.model` | safe | Model served |
 | `gen_ai.usage.input_tokens` | derived | Prompt length, not content |
 | `gen_ai.usage.output_tokens` | derived | Reply length, not content |
+| `gen_ai.system_instructions` | opt-in | System prompt, verbatim, only when capture is on |
+| `gen_ai.input.messages` | opt-in | The conversation so far, verbatim, only when capture is on |
+| `gen_ai.output.messages` | opt-in | The model's replies, verbatim, only when capture is on |
 | `spanlight.cost_usd` | derived | Spend, always `0.0` on free tiers |
 | `spanlight.cost_usd_equivalent` | derived | List-price estimate |
 | `spanlight.session.id` | derived | Random per run, links steps together |
@@ -307,8 +399,8 @@ all.
 | `error.type` | safe | Exception class, never the message |
 | `spanlight.detection` | derived | Which rule fired |
 
-`tests/spanlight/test_threat_model.py` asserts this table covers the SPEC
-contract exactly, so an attribute cannot be added without being classified.
+`tests/spanlight/test_threat_model.py` asserts this table covers the contract
+exactly, so an attribute cannot be added without being classified.
 
 **What an operator of the Grafana account sees.** Every trace, in full. They
 learn which providers ran, how long calls took, what they would have cost, which
@@ -325,6 +417,19 @@ and guessing candidate inputs does not work without it.
 messages, and stack traces. The last two were leaking until M5.4: OpenTelemetry
 records exceptions with their message and full stack by default, underneath the
 code that was carefully recording only the class name.
+
+**The one opt-in.** Content capture exists, because some callers need the bodies
+and the convention gives them a sanctioned place to go: `gen_ai.input.messages`
+and friends, JSON in the convention's message schema rather than ad-hoc
+attributes. It turns on only through the ecosystem's own variable,
+`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY`, and stays off in
+every portfolio deployment. With it unset, `spanlight.record_content(...)` at any
+call site writes nothing, which the canary test proves rather than trusts.
+
+Also worth naming is what is deliberately absent: no `gen_ai.conversation.id`.
+The convention forbids synthesising one when the framework has no real
+conversation identifier, and a session id minted per run is exactly that. Ours
+travels as `spanlight.session.id`, under its own name.
 
 **Where it still leaks.** A tool name or an index name is recorded verbatim, so a
 caller who names an index after a user has exported that user, and this library
@@ -375,6 +480,13 @@ mutation: break the rule deliberately, confirm the test goes red, put it back.
 uv sync
 uv run pytest -q
 uv run ruff check .
+```
+
+Regenerate every number this README and the project page quote:
+
+```bash
+PYTHONPATH=. uv run python bench/status.py          # seconds
+PYTHONPATH=. uv run python bench/status.py --full   # adds the wall-clock benches
 ```
 
 Run the demo agent:

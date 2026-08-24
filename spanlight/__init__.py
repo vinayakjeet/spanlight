@@ -11,7 +11,8 @@ Three lines to adopt:
 
 from __future__ import annotations
 
-from spanlight._propagation import headers
+from spanlight._content import record_content
+from spanlight._propagation import headers, mcp_meta
 from spanlight._session import current_session_id
 from spanlight._setup import init
 from spanlight._spans import (
@@ -35,8 +36,10 @@ __all__ = [
     "get_tracer",
     "headers",
     "init",
+    "mcp_meta",
     "model",
     "model_span",
+    "record_content",
     "record_usage",
     "retrieval_span",
     "session",

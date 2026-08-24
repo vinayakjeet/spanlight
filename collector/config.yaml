@@ -1,0 +1,123 @@
+# A reference Collector pipeline for Spanlight adopters.
+#
+# The portfolio itself operates no collector (SPEC non-goal 1): Grafana Cloud
+# free receives OTLP directly from the library. This file exists because three
+# things belong at a collector and cannot be done honestly inside a process:
+#
+#   genainormalizer   OpenInference and OpenLLMetry instrumented code lands in
+#                     the same gen_ai.* schema this library emits natively, so
+#                     one Grafana org reads as one fleet instead of two dialects.
+#   redaction         A second line of defence behind the library's own
+#                     canary-tested refusal to record content. The library can
+#                     only control what it emits; a collector sees everything,
+#                     including spans from instrumentation this project does not
+#                     own.
+#   tail_sampling     Keep every session that turned out error or slow, sample
+#                     the routine remainder. Decided after the run, which is
+#                     precisely the decision a head sampler cannot make and why
+#                     the library refuses to fake it (DECISIONS.md, 2026-08-07).
+#
+# Run against otelcol-contrib new enough to ship genainormalizer, or a custom
+# build that includes it. Not exercised by CI: no Docker on this machine
+# (SPEC A8), so tests hold this file to its contract statically instead.
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    spike_limit_mib: 64
+    limit_mib: 256
+
+  # Maps OpenInference and OpenLLMetry attributes onto gen_ai.* conventions.
+  # remove_originals keeps Tempo from indexing every input twice under both
+  # dialects. Early contrib builds spell the selection key `profiles`; if your
+  # build rejects `sources`, that is why.
+  genainormalizer:
+    semconv_version: "1.41.0"
+    sources: [openinference, openllmetry]
+    remove_originals: true
+
+  # Anything not on the allowed-key list is dropped outright; anything on it
+  # that still matches a blocked pattern has the value replaced. The allowlist
+  # is generated from docs/CONTRACT.md by tests/test_collector_config.py, so a
+  # renamed attribute breaks CI here before it silently vanishes in production.
+  redaction:
+    allow_all_keys: false
+    allowed_keys:
+      - gen_ai.system
+      - gen_ai.provider.name
+      - gen_ai.operation.name
+      - gen_ai.request.model
+      - gen_ai.response.model
+      - gen_ai.usage.input_tokens
+      - gen_ai.usage.output_tokens
+      - spanlight.cost_usd
+      - spanlight.cost_usd_equivalent
+      - spanlight.session.id
+      - spanlight.tool.name
+      - spanlight.tool.args_fingerprint
+      - spanlight.retrieval.index
+      - spanlight.retrieval.k
+      - spanlight.attempt.number
+      - spanlight.cold_start
+      - spanlight.semconv_version
+      - error.type
+      - spanlight.detection
+      - http.request.method
+      - http.response.status_code
+      - url.path
+      - server.address
+    blocked_values:
+      - "(?i)(sk|rk|gsk)_[a-z0-9]{16,}"
+      - "-----BEGIN [A-Z ]*PRIVATE KEY-----"
+      - "eyJ[A-Za-z0-9_-]{20,}"
+      - "(?i)bearer\\s+[a-z0-9._-]{20,}"
+    summary: info
+
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 5000
+    expected_new_traces_per_sec: 100
+    policies:
+      # Every failed session, whole. This is the override SPEC S8 wanted: a
+      # head sampler decides before an error exists, so the library cannot do
+      # this and says so instead of pretending.
+      - name: errors
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      # Slow turns kept at 100%: the five second line is where a free-tier
+      # provider call stops being ordinary. Retune from your own p95, not here.
+      - name: slow-turns
+        type: latency
+        latency:
+          threshold_ms: 5000
+      # The stated routine rate. At 20%, four sessions in five that were neither
+      # error nor slow leave no trace behind, and their detection counters still
+      # reached Prometheus because metrics bypass this pipeline entirely.
+      - name: routine-sessions
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 20
+
+exporters:
+  otlp/grafana:
+    endpoint: ${env:GRAFANA_OTLP_ENDPOINT}
+    headers:
+      Authorization: ${env:GRAFANA_AUTHORIZATION}
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, genainormalizer, redaction, tail_sampling]
+      exporters: [otlp/grafana]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter]
+      exporters: [otlp/grafana]

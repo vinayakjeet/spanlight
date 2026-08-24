@@ -101,7 +101,14 @@ def _token_usage() -> metrics.Histogram:
 
 def record_token_usage(system: str, direction: str, tokens: int | None) -> None:
     """Input and output are recorded separately because they are priced
-    separately, so a single total cannot be turned back into a cost."""
+    separately, so a single total cannot be turned back into a cost.
+
+    The label stays `gen_ai.system` under both convention generations,
+    deliberately. A metric label is a contract with every recorded series and
+    every dashboard query; following the span-attribute rename would orphan the
+    label's history for a naming change that carries no new information here.
+    The cardinality allowlist in attributes.py is written against this name.
+    """
     if tokens is None:
         return
     _token_usage().record(

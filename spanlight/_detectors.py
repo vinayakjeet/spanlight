@@ -17,6 +17,7 @@ from spanlight.attributes import (
     GEN_AI_SYSTEM,
     TOOL_ARGS_FINGERPRINT,
     TOOL_NAME,
+    resolve,
 )
 
 LOOP_THRESHOLD = 3
@@ -183,7 +184,10 @@ def watch_for_silent_failure(state: dict, span: Span) -> None:
             state["recovered"] = True
         return None
 
-    if attributes.get(GEN_AI_SYSTEM) and state.get("failed_tool"):
+    # Resolved, not the bare constant: under the experimental generation a model
+    # span carries `gen_ai.provider.name`, and a detector that read only the
+    # pinned name would stop seeing model spans entirely.
+    if attributes.get(resolve(GEN_AI_SYSTEM)) and state.get("failed_tool"):
         state["model_ran_after_tool_failed"] = True
     return None
 

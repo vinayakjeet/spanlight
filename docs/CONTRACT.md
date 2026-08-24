@@ -21,11 +21,15 @@ no trace: it looks queryable and returns nothing.
 | Attribute | Type | Example | On |
 |---|---|---|---|
 | `gen_ai.system` | string | `gemini` | model |
+| `gen_ai.provider.name` | string | `groq` | model, under the experimental generation only |
 | `gen_ai.operation.name` | string | `chat` | model |
 | `gen_ai.request.model` | string | `gemini-flash-latest` | model |
 | `gen_ai.response.model` | string | `gemini-2.5-flash-002` | model |
 | `gen_ai.usage.input_tokens` | int | `412` | model |
 | `gen_ai.usage.output_tokens` | int | `88` | model |
+| `gen_ai.system_instructions` | JSON string | `[{"type": "text", "content": "You score items."}]` | model, opt-in |
+| `gen_ai.input.messages` | JSON string | `[{"role": "user", "parts": [{"type": "text", "content": "..."}]}]` | model, opt-in |
+| `gen_ai.output.messages` | JSON string | `[{"role": "assistant", "parts": [{"type": "text", "content": "..."}], "finish_reason": "stop"}]` | model, opt-in |
 | `spanlight.cost_usd` | double | `0.0` | model |
 | `spanlight.cost_usd_equivalent` | double | `0.00013` | model |
 | `spanlight.session.id` | string | `run-2f9c` | all |
@@ -47,6 +51,41 @@ and an ended span cannot be written to.
 `error.type` is the exception class name and never the message. A message carries
 user data and gives the attribute unbounded cardinality, and both were found
 leaking by a redaction canary rather than by reading the code.
+
+### Two generations of GenAI names
+
+Nothing in the GenAI conventions is Stable, so Spanlight pins one revision and
+records which one produced a trace as `spanlight.semconv_version` on the
+resource. A host that sets the convention's own transition variable,
+`OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental`, gets the newest
+development names instead, and the resource value gains a suffix saying so.
+
+The rename table between the two generations lives in one place,
+`spanlight/attributes.py`, and holds exactly one entry today:
+`gen_ai.system` became `gen_ai.provider.name`, now required on inference spans.
+Every other name this library emits agrees across both generations, verified
+against the development document rather than assumed. Metric labels are not part
+of the switch: `gen_ai_client_token_usage` keeps its `gen_ai.system` label under
+both generations, because a metric label is a contract with recorded series and
+dashboards, and a naming change carries no new information there.
+
+Deliberately absent from both generations: `gen_ai.conversation.id`. The
+convention forbids synthesising one when the framework has no real conversation
+identifier, and a session id minted per run is exactly such a synthesis.
+`spanlight.session.id` stays under its own name for the same reason.
+
+### Content capture
+
+`gen_ai.system_instructions`, `gen_ai.input.messages` and
+`gen_ai.output.messages` are written only when the operator has asked for
+content, via the ecosystem's own variable,
+`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY` (or
+`SPAN_AND_EVENT`; `EVENT_ONLY` and `NO_CONTENT` stay off, since Spanlight emits
+no log events). Values are JSON strings following the convention's message
+schemas, text living under `parts[].content`. Off means off: with the variable
+unset or set to anything else, a call site that passes prompt bodies to
+`spanlight.record_content(...)` records nothing, and the redaction canary test
+holds that line.
 
 ## The detection event
 

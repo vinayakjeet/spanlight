@@ -5,20 +5,21 @@ from urllib.parse import unquote
 
 import structlog
 
-from spanlight.attributes import SEMCONV_VERSION, SEMCONV_VERSION_ATTRIBUTE
+from spanlight.attributes import SEMCONV_VERSION_ATTRIBUTE, semconv_generation
 
 logger = structlog.get_logger(__name__)
 
 
 TRACES_PATH = "/v1/traces"
 METRICS_PATH = "/v1/metrics"
+SAMPLE_RATE_VAR = "SPANLIGHT_SAMPLE_RATE"
 
 
 def init(
     service: str,
     endpoint: str | None = None,
     headers: str | None = None,
-    sample_rate: float = 1.0,
+    sample_rate: float | None = None,
     cost_ceiling_usd: float | None = None,
 ) -> bool:
     """Export OTLP spans when an endpoint is configured, otherwise do nothing.
@@ -33,13 +34,14 @@ def init(
     object rather than `os.environ`.
 
     `sample_rate` samples whole sessions, since a session is one trace and a
-    trace-id ratio therefore decides once per run. It defaults to 1.0: a service
-    that has gone to the trouble of configuring an endpoint and then silently
-    drops nine tenths of its traces is the same "looks configured, exports
-    nothing" failure this library exists to catch. SPEC S8's exemption for
-    sessions carrying a detection is not implemented, because a head sampler
-    decides before a detection can be known, so lowering this drops detected
-    sessions along with the rest.
+    trace-id ratio therefore decides once per run. It falls back to
+    `SPANLIGHT_SAMPLE_RATE` and then to 1.0: a service that has gone to the
+    trouble of configuring an endpoint and then silently drops nine tenths of
+    its traces is the same "looks configured, exports nothing" failure this
+    library exists to catch, so dropping anything is a decision someone makes
+    deliberately, per deployment. Below 1.0 a dropped session loses its trace
+    and its detection count together, which the sampling section of the README
+    states rather than buries.
 
     The SDK is imported inside the enabled branch. A service that has not
     configured Grafana Cloud should not pay to construct an exporter and a batch
@@ -51,6 +53,8 @@ def init(
     if not endpoint:
         logger.info("spanlight.disabled", reason="OTEL_EXPORTER_OTLP_ENDPOINT not set")
         return False
+
+    rate = _resolve_sample_rate(sample_rate, os.environ)
 
     from opentelemetry import metrics, trace
     from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
@@ -70,17 +74,22 @@ def init(
     metrics_endpoint = _signal_endpoint(endpoint, METRICS_PATH)
 
     resource = Resource.create(
-        {"service.name": service, SEMCONV_VERSION_ATTRIBUTE: SEMCONV_VERSION}
+        {
+            "service.name": service,
+            # Which generation of names this process emits, so a stored trace
+            # says what it speaks. A rename is a one-line table change in
+            # attributes.py, and this attribute is how traces made before and
+            # after such a change stay distinguishable in Tempo.
+            SEMCONV_VERSION_ATTRIBUTE: semconv_generation(),
+        }
     )
     # Session sampling with no custom sampler. A session is one trace, so a
     # trace-id ratio already decides once per session, and `ParentBased` makes
     # every step inherit the root's verdict, which is S8's requirement that a
-    # session is dropped whole rather than halved. The hand-rolled sampler this
-    # replaces kept its own unbounded decision cache and had a detection
-    # override that could never fire.
+    # session is dropped whole rather than halved.
     provider = TracerProvider(
         resource=resource,
-        sampler=ParentBased(root=TraceIdRatioBased(sample_rate)),
+        sampler=ParentBased(root=TraceIdRatioBased(rate)),
     )
     provider.add_span_processor(
         BatchSpanProcessor(
@@ -115,7 +124,12 @@ def init(
     # insurance, because code that looks load-bearing and is not costs a reader
     # more than it saves. `tests/spanlight/test_flush.py` pins the behaviour,
     # since it is the SDK's promise rather than ours.
-    logger.info("spanlight.enabled", service=service, endpoint=traces_endpoint)
+    logger.info(
+        "spanlight.enabled",
+        service=service,
+        endpoint=traces_endpoint,
+        sample_rate=rate,
+    )
     return True
 
 
@@ -146,6 +160,34 @@ def _register_default_detectors(cost_ceiling_usd: float | None) -> None:
     registry.register(silent_tool_failure_detector, phase=SESSION)
     if cost_ceiling_usd is not None:
         registry.register(cost_ceiling_detector(cost_ceiling_usd))
+
+
+def _resolve_sample_rate(sample_rate: float | None, env: dict[str, str]) -> float:
+    """The rate this deployment samples at: argument, then env, then 1.0.
+
+    The argument exists for a host that reads config through pydantic-settings;
+    the environment variable is how an operator changes the rate on Render
+    without touching code. Both funnel through the same validation, because a
+    rate of 1.5 or "mostly" must fail loudly here rather than produce a sampler
+    whose behaviour nobody can predict.
+    """
+    if sample_rate is None:
+        raw = env.get(SAMPLE_RATE_VAR, "").strip()
+        if not raw:
+            return 1.0
+        try:
+            sample_rate = float(raw)
+        except ValueError as exc:
+            raise ValueError(
+                f"{SAMPLE_RATE_VAR}={raw!r} is not a number"
+            ) from exc
+
+    if not 0.0 < sample_rate <= 1.0:
+        raise ValueError(
+            f"sample_rate {sample_rate} outside (0, 1]; "
+            "a ratio above one or at zero is never a configuration anyone meant"
+        )
+    return sample_rate
 
 
 def _signal_endpoint(endpoint: str, path: str) -> str:

@@ -12,6 +12,125 @@ reconstructed later from memory. Newest entries at the top.
 **Consequences:** what this makes easier/harder later.
 ```
 
+## 2026-08-24: Two convention generations sit behind one rename table
+
+**Context:** the benchmarks brief asks Spanlight to support the convention's own
+transition mechanism, `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental`.
+Nothing GenAI is Stable, so this is not a nicety; a minor framework upgrade can
+silently rename attributes out from under every dashboard querying them.
+Verified against the current development document rather than assumed: exactly
+one name Spanlight emits differs across generations, `gen_ai.system` became
+`gen_ai.provider.name`, which is now required on inference spans there.
+
+**Decision:** every emission site resolves GenAI names through
+`attributes.resolve()` instead of using constants directly, and the resource
+records the active generation as `spanlight.semconv_version`, suffixed when the
+opt-in is active. The rename table holds the single known entry. Metric labels
+are excluded from the switch on purpose: `gen_ai_client_token_usage` keeps its
+`gen_ai.system` label under both generations, because a label is a contract with
+recorded series and dashboards, and renaming it carries no information.
+
+**Alternatives considered:** emitting both names always, rejected because double
+ingest doubles free-tier consumption and gives Tempo two spellings of every
+span. Switching the default to the latest names, rejected because the published
+corpus was collected under the pinned revision, and re-labelling history is the
+exact trace-generation mismatch the version attribute exists to expose.
+Ignoring the mechanism entirely, rejected because the day a second rename lands,
+the cost moves from one line in a table to a grep across every call site.
+
+**Consequences:** the table has one entry today, so `resolve()` reads as
+ceremony; it is ceremony whose absence would be felt exactly once, later, and
+invisibly. A host flipping the variable changes what its new traces say without
+changing old ones, which is why the resource carries the generation. Also
+recorded by omission: no `gen_ai.conversation.id`. The convention forbids
+synthesising one where the framework has none, and a per-run session id is
+exactly such a synthesis, so ours keeps its own name.
+
+## 2026-08-24: Content capture follows the ecosystem variable, and off means off
+
+**Context:** the conventions give prompt and completion bodies sanctioned homes,
+`gen_ai.input.messages` and siblings, precisely so that callers who want them
+stop stuffing text into ad-hoc attributes. The brief requires capture exist and
+be off by default; SPEC non-goal 4 says raw text is opt-in. The gap was that
+"opt-in" had no implementation, so the requirement was satisfied by inaction.
+
+**Decision:** `spanlight.record_content(...)` writes those attributes, as JSON
+strings in the convention's schema shape, only when
+`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` says SPAN_ONLY or
+SPAN_AND_EVENT. Using the ecosystem's variable means an operator decides once
+for all their instrumentation. `EVENT_ONLY` stays off because Spanlight emits no
+log events, and silently treating it as SPAN_ONLY would make our variable mean
+something different from everyone else's.
+
+**Alternatives considered:** a `SPANLIGHT_CAPTURE` variable of our own,
+rejected as a second knob answering a question the ecosystem already answers.
+Emitting the messages as log events via a LoggerProvider, rejected because that
+needs the log pipeline SPEC non-goal 12 excludes. Hashing bodies before export,
+rejected because it destroys the only reason anyone turns capture on.
+
+**Consequences:** the threat model grows an opt-in class, and the redaction
+canary gained the sharper half of its job: with the variable unset, a call site
+handing a canary prompt straight to `record_content` must leave nothing behind,
+and the test proves it. On the collector side the three content attributes are
+deliberately absent from the allowlist, so exporting bodies takes two conscious
+changes in two files; a stray environment variable alone cannot turn a
+redacting pipeline into a prompt pipeline.
+
+## 2026-08-24: The sampling override ships as a collector policy, not a library feature
+
+**Context:** the brief asks for tail-style retention: errors and slow sessions
+kept whole, everything else sampled at a stated rate. The 2026-08-07 entry
+already proved a head sampler structurally cannot do this, because it decides
+before an error exists, and rejected in-process buffering as unbounded memory in
+service of faking it. The demand and the design were in direct conflict.
+
+**Decision:** keep the library exactly as decided, one head decision per
+session, rate configurable through argument or `SPANLIGHT_SAMPLE_RATE`, and ship
+`collector/config.yaml`: a `tail_sampling` block keeping every ERROR session and
+every session past a latency line at 100%, with the routine remainder sampled at
+a percentage written into the file. Alongside it go the two other jobs that
+belong after the process: `genainormalizer`, so OpenInference and OpenLLMetry
+instrumented fleets land in the same vocabulary, and a redaction allowlist
+generated against the contract and enforced by test.
+
+**Alternatives considered:** a bounded in-process buffer flushed at session end,
+which is tail sampling with a cap and therefore both non-goal 9 and the exact
+cost-on-every-host move the earlier entry refused. Recall-on-detection at the
+head, impossible then and now. Documentation-only treatment, which leaves the
+brief's requirement unmet while sounding responsive.
+
+**Consequences:** the portfolio itself still operates no collector, so the
+policy is verified statically, processor order, both dialects named, every
+emitted attribute allowed except the content trio, no credential in the file,
+because there is no Docker here to run it (SPEC A8). The runtime behaviour is
+the part a deploying operator verifies first. The README states both layers'
+rates side by side so nobody reads the collector's error retention as something
+the library does.
+
+## 2026-08-24: MCP propagation shipped ahead of its demonstration
+
+**Context:** SEP-414 fixed the key names for trace context inside MCP
+`params._meta`, unprefixed W3C keys, an explicit exception to `_meta`'s DNS
+rule. The brief wants one trace spanning three or more services through it, and
+the third service, Dwarpal, does not exist yet.
+
+**Decision:** `spanlight.mcp_meta()` produces the property bag and the receiving
+side joins through the existing `session(headers=...)` path unchanged, because
+SEP-414's values are ordinary W3C formats. Tests hold it hop by hop in process:
+host to gateway to server, each caller closed before the next opens, which is
+the mutation-resistant pattern the HTTP propagation tests earned in August.
+
+**Alternatives considered:** waiting for Dwarpal, rejected because the library
+API would then be designed under deadline by whoever adopts first. Three local
+processes standing in for the demo, rejected for now: it proves what the HTTP
+tests already prove and photographs worse than the real fleet will.
+
+**Consequences:** an adopter gets MCP propagation for about one line, and the
+cross-service screenshot remains open until a second real service exists. The
+baggage warning applies twice over in MCP, since `_meta` reaches servers we do
+not operate; the session id is safe to leak, anything else someone adds may not
+be.
+
 ## 2026-08-06: The context manager is the primary form, not the decorator
 
 **Context:** SPEC listed `@spanlight.model(provider, model)` as the adoption

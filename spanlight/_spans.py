@@ -31,6 +31,7 @@ from spanlight.attributes import (
     TOOL_ARGS_FINGERPRINT,
     TOOL_NAME,
     TRACER_NAME,
+    resolve,
 )
 
 FINGERPRINT_LENGTH = 16
@@ -201,7 +202,7 @@ def model_span(
     Callers set `gen_ai.response.model` on the yielded span once they know.
     """
     attributes: dict[str, Any] = {
-        GEN_AI_SYSTEM: provider,
+        resolve(GEN_AI_SYSTEM): provider,
         GEN_AI_OPERATION_NAME: operation,
     }
     if model is not None:

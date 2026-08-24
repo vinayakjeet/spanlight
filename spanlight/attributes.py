@@ -6,20 +6,37 @@ the resource so a stored trace says which revision produced it. A trace whose
 attribute names came from a different revision than the dashboard querying it is
 worse than no trace, because it looks queryable and returns nothing.
 
+Names are resolved through `resolve` at emission time, which consults
+`OTEL_SEMCONV_STABILITY_OPT_IN` and the rename table above, so a host can move
+to the latest development names without a code change. Emission sites use
+`resolve(GEN_AI_SYSTEM)`, not the bare constant, for exactly that reason.
+
 `CONTRACT` is the published set, and `tests/spanlight/test_attributes.py` holds
-it to the table in SPEC.md in both directions. A hand-maintained table always
-drifts from the code eventually, and this turns the drift into a test failure
-rather than a surprise weeks later when a dashboard quietly returns nothing.
+it to the table in docs/CONTRACT.md in both directions. A hand-maintained table
+always drifts from the code eventually, and this turns the drift into a test
+failure rather than a surprise weeks later when a dashboard quietly returns
+nothing.
 """
 
 from __future__ import annotations
 
+import os
+
 GEN_AI_SYSTEM = "gen_ai.system"
+GEN_AI_PROVIDER_NAME = "gen_ai.provider.name"
 GEN_AI_OPERATION_NAME = "gen_ai.operation.name"
 GEN_AI_REQUEST_MODEL = "gen_ai.request.model"
 GEN_AI_RESPONSE_MODEL = "gen_ai.response.model"
 GEN_AI_INPUT_TOKENS = "gen_ai.usage.input_tokens"
 GEN_AI_OUTPUT_TOKENS = "gen_ai.usage.output_tokens"
+
+# Content capture. Opt-in, and off everywhere in this portfolio: the names and
+# the JSON shape follow the convention's own opt-in attributes, which exist so
+# that prompt text has a sanctioned place to live for callers who have already
+# decided they want it, instead of being stuffed into ad-hoc attributes.
+GEN_AI_SYSTEM_INSTRUCTIONS = "gen_ai.system_instructions"
+GEN_AI_INPUT_MESSAGES = "gen_ai.input.messages"
+GEN_AI_OUTPUT_MESSAGES = "gen_ai.output.messages"
 
 # What was actually spent, which on a free tier is 0.0 and true.
 COST_USD = "spanlight.cost_usd"
@@ -49,6 +66,61 @@ DETECTION = "spanlight.detection"
 
 SEMCONV_VERSION = "1.29.0"
 SEMCONV_VERSION_ATTRIBUTE = "spanlight.semconv_version"
+
+# The convention's own transition mechanism. Nothing GenAI is Stable, and the
+# spec tells instrumentations to pin what they emit and to accept
+# `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental` as the switch to
+# the newest development names. The pinned revision is the default; setting the
+# variable moves emission onto the latest names this library knows about.
+STABILITY_OPT_IN = "OTEL_SEMCONV_STABILITY_OPT_IN"
+LATEST_EXPERIMENTAL = "gen_ai_latest_experimental"
+
+# Names that differ between the pinned revision and the latest development
+# document, pinned name first. One entry per rename, so the day another lands
+# it is one line here rather than a grep across every call site.
+#
+# The one entry that exists today: `gen_ai.system` became
+# `gen_ai.provider.name` in the development conventions, which now require it on
+# inference spans. Every other name Spanlight emits is identical across both
+# generations, and an empty table would have been honest too; the mapping exists
+# so that agreeing today does not have to be maintained by memory.
+EXPERIMENTAL_RENAMES: dict[str, str] = {
+    GEN_AI_SYSTEM: GEN_AI_PROVIDER_NAME,
+}
+
+
+def experimental_opt_in() -> bool:
+    """Whether emission should follow the latest development names.
+
+    The variable holds a comma-separated list of category values, so a host
+    opting into several migrations at once still parses. Anything unrecognised
+    is ignored rather than rejected: the variable belongs to the ecosystem, and
+    failing on a value meant for some other instrumentation would make Spanlight
+    harder to adopt beside that instrumentation.
+    """
+    values = os.environ.get(STABILITY_OPT_IN, "")
+    return LATEST_EXPERIMENTAL in {v.strip() for v in values.split(",") if v.strip()}
+
+
+def resolve(attribute: str) -> str:
+    """The name to emit for `attribute` under the active generation.
+
+    Every call site that writes a GenAI attribute goes through here rather than
+    using its constant directly. Today exactly one name differs, so the function
+    reads as ceremony; it is the mechanism that keeps it at one file when it
+    stops being one name.
+    """
+    if experimental_opt_in():
+        return EXPERIMENTAL_RENAMES.get(attribute, attribute)
+    return attribute
+
+
+def semconv_generation() -> str:
+    """What `spanlight.semconv_version` records on the resource."""
+    if experimental_opt_in():
+        return f"{SEMCONV_VERSION}+{LATEST_EXPERIMENTAL}"
+    return SEMCONV_VERSION
+
 
 TRACER_NAME = "spanlight"
 
@@ -110,11 +182,15 @@ EVENT_CONTRACT = frozenset(
 CONTRACT = frozenset(
     {
         GEN_AI_SYSTEM,
+        GEN_AI_PROVIDER_NAME,
         GEN_AI_OPERATION_NAME,
         GEN_AI_REQUEST_MODEL,
         GEN_AI_RESPONSE_MODEL,
         GEN_AI_INPUT_TOKENS,
         GEN_AI_OUTPUT_TOKENS,
+        GEN_AI_SYSTEM_INSTRUCTIONS,
+        GEN_AI_INPUT_MESSAGES,
+        GEN_AI_OUTPUT_MESSAGES,
         COST_USD,
         COST_USD_EQUIVALENT,
         SESSION_ID,
