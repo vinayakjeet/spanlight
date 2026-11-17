@@ -110,7 +110,7 @@ written to the span that caused it from there.
 | `error.type` | `RateLimitError` |
 | `spanlight.detection` | `silent_tool_failure` |
 
-The full contract is in `SPEC.md`, and a test parses that table and fails in both
+The full contract is in `docs/CONTRACT.md`, and a test parses that table and fails in both
 directions if the code and the documentation disagree. A dashboard written
 against an attribute the code no longer emits returns nothing and looks fine
 doing it, which is the same class of failure this project exists to catch.
@@ -146,6 +146,12 @@ turn one problem into a count of how many steps happened to follow it.
 the session did not end ERROR. That is a run told a tool broke which answered
 anyway. It is only decidable when the run ends, so it lands on the session span.
 
+**Retry amplification.** Five or more failed attempts across one session. Added
+after the field study, once attempt spans made retries visible: five calls that
+each quietly retried twice is a run spending its budget on backoff, and no single
+call looks remarkable. Registered by default alongside loop and silent tool
+failure; the cost ceiling is registered only when a ceiling is configured.
+
 Each fires three ways: an attribute for grouping, an event carrying why, and
 `spanlight_detections_total{type,service}` for alerting. Alerting on the presence
 of a span means querying traces on a timer, which a free tier will not carry.
@@ -162,16 +168,25 @@ microseconds per call, in-process only.
 | `model_span` | 13.4us | 51.9us |
 | `tool_span` | | 60.7us |
 | `session` | 18.9us | 59.8us |
-| `tool_span` with all three detectors | | 60.9us |
 
-Two things worth reading off that table.
+Detector cost, timed inside a session, which is the only place detectors run.
+CPython 3.13.18, Linux x86_64, same method, so compare these two rows with each
+other rather than with the table above:
+
+| | enabled |
+|---|---|
+| `tool_span` in a session, no detectors | 43.5us |
+| `tool_span` in a session, all four detectors | 48.3us |
+
+Two things worth reading off those tables.
 
 The disabled path costs 13.4us against SPEC S2's 50us budget, so instrumented
 code left in place with no endpoint configured is close to free.
 
-**The detectors are free.** 60.9us against 60.7us without them is inside the
-noise between runs. They are dictionary arithmetic on the caller's thread, which
-is why they are required to stay that way.
+**The detectors cost a few microseconds.** Inside a session, the four default
+detectors add about 5us per tool span (4.8us in that run). They are dictionary arithmetic on the
+caller's thread, which is why they are required to stay that way. An earlier
+version of this table said they were free; see What Broke.
 
 Export time is deliberately excluded. A `BatchSpanProcessor` hands spans to a
 background thread and the caller never waits, so including it would measure
@@ -239,13 +254,20 @@ Three things that adoption found, which no amount of designing in isolation had:
 
 Regenerate with `uv run python bench/false_positives.py`.
 
-700 synthetic healthy sessions across seven patterns: pagination, retries,
-multi-step plans, recovery by trying a different tool, long research runs.
+900 synthetic healthy sessions across nine patterns: pagination, tool retries,
+model retries, multi-step plans, repeated lookups of different entities, recovery
+by trying a different tool, long research runs. A retry storm runs beside them as
+a positive control and must fire.
 
 | Detector | Fires on healthy | 95% CI |
 |---|---|---|
-| loop | 0/700 | 0.0% to 0.5% |
-| silent_tool_failure | 0/700 | 0.0% to 0.5% |
+| loop | 0/900 | 0.0% to 0.4% |
+| silent_tool_failure | 0/900 | 0.0% to 0.4% |
+| retry_amplification | 0/900 | 0.0% to 0.4% |
+
+The positive control fires retry_amplification on 100/100. The cost ceiling is not
+in this table: it has no default, so its false positive rate is whatever ceiling
+you choose.
 
 Those are the numbers **after** the measurement changed the rules. Before it,
 loop fired on 14.3% of healthy sessions and silent_tool_failure on 28.6%, both
@@ -470,14 +492,27 @@ error handling exactly as well as it describes ignoring the error. Measured at
 14.3% and 28.6% of healthy sessions. Both rules were wrong, not their thresholds,
 and only measuring found it.
 
-The thread through all five is that a test which cannot fail is worse than no
+**The overhead benchmark reported the detectors as free without running them.**
+It timed `tool_span` with no session around it, and `registry.run` returns at
+once when there is no session id. The detectors were registered and called zero
+times, so 60.9us against 60.7us compared two identical code paths. Found while
+preparing to explain the number. The benchmark now times the span inside a
+session, where the detectors cost about 5us.
+
+**A promised attribute was never emitted.** The contract, the dashboards and the
+Cold start section below all named `spanlight.cold_start`, and nothing set it. The
+contract test compares the documented names with a constant, so a name present in
+both and emitted nowhere passed. The first recording span in a process now carries
+it, and a test asserts the span does.
+
+The thread through all seven is that a test which cannot fail is worse than no
 test, because it is evidence. The ones that matter here are now checked by
 mutation: break the rule deliberately, confirm the test goes red, put it back.
 
 ## Runbook
 
 ```bash
-uv sync
+uv sync --extra app
 uv run pytest -q
 uv run ruff check .
 ```

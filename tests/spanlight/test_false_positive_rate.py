@@ -14,7 +14,7 @@ from spanlight._detectors import (
 )
 from spanlight.attributes import DETECTION
 
-# Measured at 0/700 for both. The budget is not zero, because a detector tuned
+# Measured at 0/900 for each detector. The budget is not zero, because a detector tuned
 # until it never fires on anything is a detector that never fires. It is low
 # enough that reintroducing either bug found in M6.3 fails here: both misfired on
 # 100% of at least one pattern, which is 14% and 29% overall.

@@ -29,6 +29,7 @@ from spanlight._detector_framework import SESSION, registry
 from spanlight._detectors import (
     cost_ceiling_detector,
     loop_detector,
+    retry_amplification_detector,
     silent_tool_failure_detector,
     watch_for_silent_failure,
 )
@@ -75,9 +76,21 @@ def _session() -> None:
 def _register_detectors() -> None:
     registry.clear_detectors()
     registry.register(loop_detector)
+    registry.register(retry_amplification_detector())
     registry.register(watch_for_silent_failure)
     registry.register(cost_ceiling_detector(1.0))
     registry.register(silent_tool_failure_detector, phase=SESSION)
+
+
+def _in_one_session(setup) -> tuple[float, float]:
+    """Time tool_span inside an open session, which is the only place detectors run.
+
+    `registry.run` returns at once when there is no session id. An earlier version
+    of this benchmark timed tool_span with no session around it, so the detectors
+    were registered and never called, and the table reported them as free.
+    """
+    with spanlight.session():
+        return _microseconds_per_call(_tool_span, setup=setup)
 
 
 def main() -> None:
@@ -103,8 +116,14 @@ def main() -> None:
     # against.
     rows.append(
         (
-            "tool_span, enabled, 3 detectors",
-            *_microseconds_per_call(_tool_span, setup=_register_detectors),
+            "tool_span in a session, no detectors",
+            *_in_one_session(registry.clear_detectors),
+        )
+    )
+    rows.append(
+        (
+            "tool_span in a session, all four detectors",
+            *_in_one_session(_register_detectors),
         )
     )
 

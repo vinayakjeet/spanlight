@@ -304,9 +304,10 @@ def main() -> None:
 
 
 def sessions_note(results: dict[str, Counter]) -> str:
-    total = sum(f["sessions"] for f in results.values())
+    healthy = {name: f for name, f in results.items() if name in PATTERNS}
+    total = sum(f["sessions"] for f in healthy.values())
     return (
-        f"{total} synthetic healthy sessions across {len(results)} patterns, "
+        f"{total} synthetic healthy sessions across {len(healthy)} patterns, "
         f"seed {SEED}.\nA rate of zero means the detector does not fire on any "
         "pattern here, not that it never fires."
     )

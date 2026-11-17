@@ -81,6 +81,10 @@ def overhead_rows() -> list[tuple[str, float, float]]:
     """The benchmark table via bench/overhead's helpers and constants, disabled
     first: set_tracer_provider is write-once."""
     import bench.overhead as overhead
+    from spanlight import session as spanlight_session
+    from spanlight._detector_framework import registry
+
+    clear = registry.clear_detectors
 
     def measure(fn, setup=lambda: None):
         setup()
@@ -100,12 +104,17 @@ def overhead_rows() -> list[tuple[str, float, float]]:
 
     rows.append(("model_span, enabled", *measure(overhead._model_span)))
     rows.append(("tool_span, enabled", *measure(overhead._tool_span)))
-    rows.append(
-        (
-            "tool_span, enabled, all detectors",
-            *measure(overhead._tool_span, setup=overhead._register_detectors),
+    # Detectors only run inside a session, so both rows open one around the timing.
+    with spanlight_session():
+        rows.append(
+            ("tool_span in a session, no detectors", *measure(overhead._tool_span, setup=clear))
         )
-    )
+        rows.append(
+            (
+                "tool_span in a session, all four detectors",
+                *measure(overhead._tool_span, setup=overhead._register_detectors),
+            )
+        )
     return rows
 
 
@@ -180,8 +189,11 @@ def main() -> None:
         return
 
     print("\n== overhead (source: bench/overhead.py) ==")
-    width = max(len(name) for name, _, _ in overhead_rows())
-    for name, best, median in overhead_rows():
+    # Measured once. A second call would find the tracer provider already set
+    # (it is write-once), so its "disabled" rows would quietly time the enabled path.
+    rows = overhead_rows()
+    width = max(len(name) for name, _, _ in rows)
+    for name, best, median in rows:
         print(f"  {name:{width}}   {best:8.2f}us {median:8.2f}us best-of-7 median")
 
     print("\n== detector state (source: tests/spanlight/test_detector_state.py) ==")

@@ -38,6 +38,14 @@ def _isolate_detectors() -> None:
     registry.reset()
 
 
+@pytest.fixture(autouse=True)
+def _no_cold_start_mark(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The cold-start mark is process-global and goes to whichever span records
+    first. Left alone it would land on an arbitrary test's span depending on test
+    order, so it is switched off here and switched on by the tests about it."""
+    monkeypatch.setattr(spans_module, "_cold_start_pending", False)
+
+
 @pytest.fixture
 def spans(monkeypatch: pytest.MonkeyPatch) -> InMemorySpanExporter:
     """Capture emitted spans without touching the global tracer provider.

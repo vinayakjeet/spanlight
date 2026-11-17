@@ -21,6 +21,7 @@ from spanlight._propagation import remote_context, remote_session_id
 from spanlight._session import bind, current_session_id
 from spanlight.attributes import (
     ATTEMPT_NUMBER,
+    COLD_START,
     ERROR_TYPE,
     GEN_AI_OPERATION_NAME,
     GEN_AI_REQUEST_MODEL,
@@ -36,6 +37,20 @@ from spanlight.attributes import (
 
 FINGERPRINT_LENGTH = 16
 SESSION_SPAN_NAME = "session"
+
+# The first recording span in this process. On a host that scales to zero, such
+# as the demo on Render's free tier, that span pays the spin-up, and the mark lets
+# a dashboard annotate the outlier instead of averaging it in. Consumed only by a
+# span that records, so a call made before init() does not use it up. Two threads
+# racing here can both mark a span, which is harmless.
+_cold_start_pending = True
+
+
+def _mark_cold_start(span: Span) -> None:
+    global _cold_start_pending
+    if _cold_start_pending and span.is_recording():
+        _cold_start_pending = False
+        span.set_attribute(COLD_START, True)
 
 
 def get_tracer() -> trace.Tracer:
@@ -106,6 +121,7 @@ def _span(name: str, attributes: dict[str, Any], phase: str = SPAN) -> Iterator[
         record_exception=False,
         set_status_on_exception=False,
     ) as span:
+        _mark_cold_start(span)
         try:
             yield span
         except Exception as exc:
